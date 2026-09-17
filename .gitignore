@@ -1,0 +1,17 @@
+# Binaries
+bin/
+/tmp/
+
+# Go
+*.exe
+*.test
+*.out
+
+# Node / Frontend
+web/node_modules/
+web/dist/
+
+# Environment and Data
+.env
+music/
+data/

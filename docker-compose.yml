@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: harmoni-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-harmoni}
+      POSTGRES_USER: ${POSTGRES_USER:-harmoni}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-harmoni_secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-harmoni} -d ${POSTGRES_DB:-harmoni}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - harmoni-net
+
+  harmoni:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: harmoni-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-harmoni}:${POSTGRES_PASSWORD:-harmoni_secret}@postgres:5432/${POSTGRES_DB:-harmoni}?sslmode=disable
+      MUSIC_DIR: /music
+      DATA_DIR: /data
+      ENV: ${ENV:-production}
+    volumes:
+      - ${MUSIC_DIR_HOST:-./music}:/music
+      - ${DATA_DIR_HOST:-./data}:/data
+    ports:
+      - "${PORT_BIND:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/rest/ping.view"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - harmoni-net
+
+volumes:
+  postgres_data:
+    name: harmoni_postgres_data
+
+networks:
+  harmoni-net:
+    name: harmoni_network
