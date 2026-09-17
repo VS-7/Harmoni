@@ -30,7 +30,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      PORT: 8080
+      PORT: 5226
       DATABASE_URL: postgres://${POSTGRES_USER:-harmoni}:${POSTGRES_PASSWORD:-harmoni_secret}@postgres:5432/${POSTGRES_DB:-harmoni}?sslmode=disable
       MUSIC_DIR: /music
       DATA_DIR: /data
@@ -39,9 +39,9 @@ services:
       - ${MUSIC_DIR_HOST:-./music}:/music
       - ${DATA_DIR_HOST:-./data}:/data
     ports:
-      - "${PORT_BIND:-8080}:8080"
+      - "${PORT_BIND:-5226}:5226"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/rest/ping.view"]
+      test: ["CMD", "curl", "-f", "http://localhost:5226/rest/ping.view"]
       interval: 30s
       timeout: 5s
       retries: 3
