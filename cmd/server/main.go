@@ -75,6 +75,7 @@ func main() {
 		albumRepo       *postgres.AlbumRepository
 		trackRepo       *postgres.TrackRepository
 		radioRepo       *postgres.RadioRepository
+		playlistRepo    *postgres.PlaylistRepository
 		downloadJobRepo *postgres.DownloadJobRepository
 	)
 
@@ -83,6 +84,7 @@ func main() {
 		albumRepo = postgres.NewAlbumRepository(pool)
 		trackRepo = postgres.NewTrackRepository(pool)
 		radioRepo = postgres.NewRadioRepository(pool)
+		playlistRepo = postgres.NewPlaylistRepository(pool)
 		downloadJobRepo = postgres.NewDownloadJobRepository(pool)
 	}
 
@@ -96,6 +98,7 @@ func main() {
 		artistUC   *usecase.ArtistService
 		scanUC     *usecase.LibraryScanService
 		radioUC    *usecase.RadioService
+		playlistUC *usecase.PlaylistService
 		ingestUC   *usecase.IngestService
 		subsonicUC *usecase.SubsonicService
 	)
@@ -106,11 +109,12 @@ func main() {
 		artistUC = usecase.NewArtistService(artistRepo, albumRepo)
 		scanUC = usecase.NewLibraryScanService(cfg.MusicDir, trackRepo, albumRepo, artistRepo, tagExtractor, audioStorage, embedder)
 		radioUC = usecase.NewRadioService(trackRepo, radioRepo, embedder)
+		playlistUC = usecase.NewPlaylistService(playlistRepo, trackRepo, radioUC)
 		ingestUC = usecase.NewIngestService(downloadJobRepo, jobQueue)
 		subsonicUC = usecase.NewSubsonicService("admin", "admin", artistRepo, albumRepo, trackRepo, radioUC)
 
 		// 8. Ingest Worker (Single-worker throttled queue)
-		downloadWorker := worker.NewDownloadWorker(downloadJobRepo, jobQueue, downloader, scanUC, cfg.MusicDir)
+		downloadWorker := worker.NewDownloadWorker(downloadJobRepo, jobQueue, downloader, scanUC, playlistUC, trackRepo, cfg.MusicDir)
 		downloadWorker.Start(rootCtx)
 		defer downloadWorker.Stop()
 
@@ -131,6 +135,7 @@ func main() {
 		ArtistUC:   artistUC,
 		ScanUC:     scanUC,
 		RadioUC:    radioUC,
+		PlaylistUC: playlistUC,
 		IngestUC:   ingestUC,
 		SubsonicUC: subsonicUC,
 	}

@@ -3,21 +3,28 @@ package worker
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 
+	"harmoni/internal/core/domain/playlist"
 	"harmoni/internal/core/ports"
 )
 
 type DownloadWorker struct {
-	jobRepo   ports.DownloadJobRepository
-	jobQueue  <-chan string
-	client    ports.DownloaderClient
-	scanner   ports.LibraryScanUseCase
-	outputDir string
-	wg        sync.WaitGroup
-	ctx       context.Context
-	cancel    context.CancelFunc
+	jobRepo    ports.DownloadJobRepository
+	jobQueue   <-chan string
+	client     ports.DownloaderClient
+	scanner    ports.LibraryScanUseCase
+	playlistUC ports.PlaylistUseCase
+	trackRepo  ports.TrackRepository
+	outputDir  string
+	wg         sync.WaitGroup
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 func NewDownloadWorker(
@@ -25,14 +32,18 @@ func NewDownloadWorker(
 	jobQueue <-chan string,
 	client ports.DownloaderClient,
 	scanner ports.LibraryScanUseCase,
+	playlistUC ports.PlaylistUseCase,
+	trackRepo ports.TrackRepository,
 	outputDir string,
 ) *DownloadWorker {
 	return &DownloadWorker{
-		jobRepo:   jobRepo,
-		jobQueue:  jobQueue,
-		client:    client,
-		scanner:   scanner,
-		outputDir: outputDir,
+		jobRepo:    jobRepo,
+		jobQueue:   jobQueue,
+		client:     client,
+		scanner:    scanner,
+		playlistUC: playlistUC,
+		trackRepo:  trackRepo,
+		outputDir:  filepath.Clean(outputDir),
 	}
 }
 
@@ -100,10 +111,68 @@ func (w *DownloadWorker) processJob(ctx context.Context, jobID string) {
 		}
 	}
 
+	// Automatic playlist creation if downloaded URL was a playlist or created a subfolder
+	audioDir := filepath.Dir(audioPath)
+	if w.playlistUC != nil && w.trackRepo != nil && audioDir != w.outputDir {
+		folderName := filepath.Base(audioDir)
+		w.createPlaylistFromFolder(ctx, folderName, audioDir)
+	}
+
 	if err := job.Complete(); err != nil {
 		slog.ErrorContext(ctx, "falha ao marcar job como concluído", "job_id", jobID, "err", err)
 		return
 	}
 	_ = w.jobRepo.Update(ctx, job)
 	slog.InfoContext(ctx, "job de download concluído com sucesso", "job_id", jobID)
+}
+
+func (w *DownloadWorker) createPlaylistFromFolder(ctx context.Context, name, folderPath string) {
+	slog.InfoContext(ctx, "criando ou atualizando playlist a partir de download de playlist", "nome", name, "pasta", folderPath)
+
+	playlists, err := w.playlistUC.ListPlaylists(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "falha ao listar playlists para verificar existência", "err", err)
+		return
+	}
+
+	var targetPL *playlist.Playlist
+	for _, p := range playlists {
+		if strings.EqualFold(p.Name, name) {
+			targetPL = p
+			break
+		}
+	}
+
+	if targetPL == nil {
+		newPL, err := w.playlistUC.CreatePlaylist(ctx, name, "Playlist importada automaticamente do YouTube")
+		if err != nil {
+			slog.WarnContext(ctx, "falha ao criar playlist para pasta", "pasta", name, "err", err)
+			return
+		}
+		targetPL = newPL
+	}
+
+	// Collect audio files in folder in sorted order
+	var audioFiles []string
+	_ = filepath.WalkDir(folderPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".mp3" || ext == ".flac" || ext == ".m4a" || ext == ".opus" {
+			audioFiles = append(audioFiles, path)
+		}
+		return nil
+	})
+	sort.Strings(audioFiles)
+
+	for _, fPath := range audioFiles {
+		cleanFPath := filepath.Clean(fPath)
+		tr, err := w.trackRepo.FindByFilePath(ctx, cleanFPath)
+		if err == nil && tr != nil {
+			_ = w.playlistUC.AddTrackToPlaylist(ctx, targetPL.ID, tr.ID)
+		}
+	}
+
+	slog.InfoContext(ctx, "playlist populada automaticamente com faixas baixadas", "playlist", name, "faixas_processadas", len(audioFiles))
 }

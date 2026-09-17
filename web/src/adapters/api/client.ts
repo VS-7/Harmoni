@@ -2,6 +2,7 @@ import { endpoints } from './endpoints.ts';
 import type { Track } from '../../domain/track.ts';
 import type { Album, Artist } from '../../domain/album.ts';
 import type { DownloadJob } from '../../domain/download.ts';
+import type { Playlist } from '../../domain/playlist.ts';
 
 export const apiClient = {
   async listTracks(offset = 0, limit = 50, query = ''): Promise<{ data: Track[]; total: number }> {
@@ -56,6 +57,64 @@ export const apiClient = {
     return json.data || [];
   },
 
+  async listPlaylists(): Promise<Playlist[]> {
+    const res = await fetch(endpoints.playlists);
+    if (!res.ok) throw new Error('Falha ao buscar playlists');
+    const json = await res.json();
+    return json.data || [];
+  },
+
+  async getPlaylist(id: string): Promise<Playlist> {
+    const res = await fetch(endpoints.playlist(id));
+    if (!res.ok) throw new Error('Falha ao buscar playlist');
+    return res.json();
+  },
+
+  async createPlaylist(name: string, description = ''): Promise<Playlist> {
+    const res = await fetch(endpoints.playlists, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Erro ao criar playlist' }));
+      throw new Error(err.error || 'Falha ao criar playlist');
+    }
+    return res.json();
+  },
+
+  async createSmartPlaylist(seedTrackId: string, name?: string, limit = 25): Promise<Playlist> {
+    const res = await fetch(endpoints.smartPlaylist, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seedTrackId, name, limit }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Erro ao gerar playlist inteligente' }));
+      throw new Error(err.error || 'Falha ao gerar playlist inteligente');
+    }
+    return res.json();
+  },
+
+  async deletePlaylist(id: string): Promise<void> {
+    const res = await fetch(endpoints.playlist(id), { method: 'DELETE' });
+    if (!res.ok) throw new Error('Falha ao remover playlist');
+  },
+
+  async addTrackToPlaylist(playlistId: string, trackId: string): Promise<void> {
+    const res = await fetch(endpoints.playlistTracks(playlistId), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trackId }),
+    });
+    if (!res.ok) throw new Error('Falha ao adicionar música à playlist');
+  },
+
+  async removeTrackFromPlaylist(playlistId: string, trackId: string): Promise<void> {
+    const res = await fetch(endpoints.playlistTrack(playlistId, trackId), { method: 'DELETE' });
+    if (!res.ok) throw new Error('Falha ao remover música da playlist');
+  },
+
   async submitDownload(url: string): Promise<DownloadJob> {
     const res = await fetch(endpoints.downloads, {
       method: 'POST',
@@ -87,4 +146,9 @@ export const apiClient = {
   getCoverUrl(trackId: string): string {
     return endpoints.cover(trackId);
   },
+
+  getAlbumCoverUrl(albumId: string): string {
+    return endpoints.albumCover(albumId);
+  },
 };
+

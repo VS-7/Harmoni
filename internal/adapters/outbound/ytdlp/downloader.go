@@ -27,7 +27,7 @@ func NewDownloader(outputDir string) (*Downloader, error) {
 	return &Downloader{outputDir: absOut}, nil
 }
 
-// Download invokes yt-dlp throttled with nice -n 19 (Guardrails 4 & 5).
+// Download invokes yt-dlp throttled with nice -n 19, supporting single tracks or full playlists (Guardrails 4 & 5).
 func (d *Downloader) Download(ctx context.Context, rawURL string, subDir string) (string, string, error) {
 	safeURL, err := ingest.ValidateAndSanitizeURL(rawURL)
 	if err != nil {
@@ -40,23 +40,37 @@ func (d *Downloader) Download(ctx context.Context, rawURL string, subDir string)
 		_ = os.MkdirAll(targetDir, 0755)
 	}
 
-	outputTemplate := filepath.Join(targetDir, "%(title)s [%(id)s].%(ext)s")
+	isPlaylist := strings.Contains(safeURL, "list=") || strings.Contains(safeURL, "/playlist")
 
-	slog.InfoContext(ctx, "executando download via yt-dlp", "url", safeURL, "targetDir", targetDir)
+	var outputTemplate string
+	if isPlaylist {
+		outputTemplate = filepath.Join(targetDir, "%(playlist_title,playlist)s", "%(playlist_index)02d - %(artist,creator,channel)s - %(title)s [%(id)s].%(ext)s")
+	} else {
+		outputTemplate = filepath.Join(targetDir, "%(artist,creator,channel)s - %(title)s [%(id)s].%(ext)s")
+	}
 
-	// Execute yt-dlp under nice -n 19 for low OS priority (Guardrail 4)
+	slog.InfoContext(ctx, "executando download via yt-dlp", "url", safeURL, "isPlaylist", isPlaylist, "targetDir", targetDir)
+
 	args := []string{
 		"-n", "19",
 		"yt-dlp",
 		"--extract-audio",
 		"--audio-format", "mp3",
 		"--audio-quality", "0",
+		"--add-metadata",
+		"--embed-metadata",
 		"--write-thumbnail",
 		"--convert-thumbnails", "jpg",
-		"--no-playlist",
-		"--output", outputTemplate,
-		safeURL,
+		"--embed-thumbnail",
 	}
+
+	if isPlaylist {
+		args = append(args, "--yes-playlist")
+	} else {
+		args = append(args, "--no-playlist")
+	}
+
+	args = append(args, "--output", outputTemplate, safeURL)
 
 	cmd := exec.CommandContext(ctx, "nice", args...)
 	output, err := cmd.CombinedOutput()
@@ -65,23 +79,25 @@ func (d *Downloader) Download(ctx context.Context, rawURL string, subDir string)
 		return "", "", fmt.Errorf("erro no download com yt-dlp: %w (output: %s)", err, string(output))
 	}
 
-	// Find newly created mp3 and jpg files
+	// Walk target directory recursively to find the downloaded audio and cover
 	var audioPath, coverPath string
-	entries, _ := os.ReadDir(targetDir)
-	for _, entry := range entries {
-		name := entry.Name()
-		full := filepath.Join(targetDir, name)
-		if strings.HasSuffix(name, ".mp3") {
-			audioPath = full
-		} else if strings.HasSuffix(name, ".jpg") {
-			coverPath = full
+	_ = filepath.Walk(targetDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
 		}
-	}
+		name := strings.ToLower(info.Name())
+		if strings.HasSuffix(name, ".mp3") {
+			audioPath = path
+		} else if strings.HasSuffix(name, ".jpg") || strings.HasSuffix(name, ".png") {
+			coverPath = path
+		}
+		return nil
+	})
 
 	if audioPath == "" {
-		return "", "", fmt.Errorf("arquivo de áudio não foi encontrado após o download")
+		return "", "", fmt.Errorf("nenhum arquivo de áudio foi encontrado após o download")
 	}
 
-	slog.InfoContext(ctx, "download concluído com sucesso", "audioPath", audioPath, "coverPath", coverPath)
+	slog.InfoContext(ctx, "download concluído com sucesso", "audioPath", audioPath, "coverPath", coverPath, "isPlaylist", isPlaylist)
 	return audioPath, coverPath, nil
 }

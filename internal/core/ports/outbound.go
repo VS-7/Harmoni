@@ -7,6 +7,7 @@ import (
 
 	"harmoni/internal/core/domain/ingest"
 	"harmoni/internal/core/domain/library"
+	"harmoni/internal/core/domain/playlist"
 )
 
 type ExtractedMetadata struct {
@@ -110,3 +111,16 @@ type DownloaderClient interface {
 type EmbeddingService interface {
 	GenerateEmbedding(ctx context.Context, text string) ([]float32, error)
 }
+
+// Playlist Repository Interface
+type PlaylistRepository interface {
+	Save(ctx context.Context, pl *playlist.Playlist) error
+	FindByID(ctx context.Context, id playlist.PlaylistID) (*playlist.Playlist, error)
+	FindByName(ctx context.Context, name string) (*playlist.Playlist, error)
+	ListAll(ctx context.Context) ([]*playlist.Playlist, error)
+	Delete(ctx context.Context, id playlist.PlaylistID) error
+	AddTrack(ctx context.Context, playlistID playlist.PlaylistID, trackID library.TrackID, position int) error
+	RemoveTrack(ctx context.Context, playlistID playlist.PlaylistID, trackID library.TrackID) error
+	GetTracks(ctx context.Context, playlistID playlist.PlaylistID) ([]library.Track, error)
+}
+

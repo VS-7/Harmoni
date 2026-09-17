@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,7 +42,7 @@ func (s *AudioStorage) CleanPath(path string) (string, error) {
 	}
 
 	rel, err := filepath.Rel(s.rootDir, absPath)
-	if err != nil || strings.HasPrefix(rel, "..") || rel == "." && s.rootDir != absPath {
+	if err != nil || strings.HasPrefix(rel, "..") || (rel == "." && s.rootDir != absPath) {
 		return "", ErrDirectoryTraversal
 	}
 
@@ -72,14 +73,27 @@ func (s *AudioStorage) OpenAudio(filePath string) (io.ReadSeekCloser, int64, err
 	return file, stat.Size(), nil
 }
 
-// ExtractCover tries embedded metadata picture first, then adjacent folder images.
+// ExtractCover tries embedded cover first, then local image files, then generates a dynamic SVG.
 func (s *AudioStorage) ExtractCover(filePath string) (io.ReadCloser, string, error) {
 	safePath, err := s.CleanPath(filePath)
 	if err != nil {
-		return nil, "", err
+		return s.generateDefaultCover("Harmoni"), "image/svg+xml", nil
 	}
 
-	// 1. Try embedded cover
+	ext := strings.ToLower(filepath.Ext(safePath))
+
+	// 1. If safePath is already an image, serve it directly
+	if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp" {
+		if file, err := os.Open(safePath); err == nil {
+			mimeType := mime.TypeByExtension(ext)
+			if mimeType == "" {
+				mimeType = "image/jpeg"
+			}
+			return file, mimeType, nil
+		}
+	}
+
+	// 2. Try embedded cover from audio file
 	if file, err := os.Open(safePath); err == nil {
 		defer file.Close()
 		if m, err := tag.ReadFrom(file); err == nil {
@@ -93,25 +107,83 @@ func (s *AudioStorage) ExtractCover(filePath string) (io.ReadCloser, string, err
 		}
 	}
 
-	// 2. Try directory cover files
 	dir := filepath.Dir(safePath)
-	candidateNames := []string{"cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png"}
-	for _, name := range candidateNames {
+	baseNoExt := strings.TrimSuffix(filepath.Base(safePath), ext)
+
+	// 3. Try same-basename image (e.g. Track.jpg alongside Track.mp3, common in yt-dlp)
+	sameBaseCandidates := []string{
+		filepath.Join(dir, baseNoExt+".jpg"),
+		filepath.Join(dir, baseNoExt+".jpeg"),
+		filepath.Join(dir, baseNoExt+".png"),
+		filepath.Join(dir, baseNoExt+".webp"),
+	}
+	for _, cPath := range sameBaseCandidates {
+		if file, err := os.Open(cPath); err == nil {
+			mimeType := mime.TypeByExtension(filepath.Ext(cPath))
+			if mimeType == "" {
+				mimeType = "image/jpeg"
+			}
+			return file, mimeType, nil
+		}
+	}
+
+	// 4. Try standard directory cover files
+	stdCandidates := []string{"cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png", "album.jpg"}
+	for _, name := range stdCandidates {
 		coverPath := filepath.Join(dir, name)
-		if info, err := os.Stat(coverPath); err == nil && !info.IsDir() {
-			cFile, err := os.Open(coverPath)
-			if err == nil {
-				ext := strings.ToLower(filepath.Ext(coverPath))
-				mimeType := mime.TypeByExtension(ext)
-				if mimeType == "" {
-					mimeType = "image/jpeg"
+		if file, err := os.Open(coverPath); err == nil {
+			mimeType := mime.TypeByExtension(filepath.Ext(coverPath))
+			if mimeType == "" {
+				mimeType = "image/jpeg"
+			}
+			return file, mimeType, nil
+		}
+	}
+
+	// 5. Look for any image in the directory
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			eExt := strings.ToLower(filepath.Ext(entry.Name()))
+			if eExt == ".jpg" || eExt == ".jpeg" || eExt == ".png" || eExt == ".webp" {
+				if file, err := os.Open(filepath.Join(dir, entry.Name())); err == nil {
+					mimeType := mime.TypeByExtension(eExt)
+					if mimeType == "" {
+						mimeType = "image/jpeg"
+					}
+					return file, mimeType, nil
 				}
-				return cFile, mimeType, nil
 			}
 		}
 	}
 
-	return nil, "", ErrCoverNotFound
+	// 6. Dynamic high-quality SVG placeholder with track title (Never 404)
+	return s.generateDefaultCover(baseNoExt), "image/svg+xml", nil
+}
+
+func (s *AudioStorage) generateDefaultCover(label string) io.ReadCloser {
+	safeLabel := url.PathEscape(label)
+	if len(label) > 24 {
+		safeLabel = label[:24] + "..."
+	}
+
+	svg := fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" width="500" height="500" viewBox="0 0 500 500">
+  <defs>
+    <linearGradient id="grad" x1="0%%" y1="0%%" x2="100%%" y2="100%%">
+      <stop offset="0%%" stop-color="#10b981"/>
+      <stop offset="100%%" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+  <rect width="100%%" height="100%%" fill="url(#grad)"/>
+  <circle cx="250" cy="220" r="90" fill="#000000" fill-opacity="0.25"/>
+  <path d="M220 180v80l60-40z" fill="#f8fafc"/>
+  <text x="250" y="380" font-family="system-ui, sans-serif" font-size="24" font-weight="bold" fill="#f8fafc" text-anchor="middle">%s</text>
+  <text x="250" y="415" font-family="system-ui, sans-serif" font-size="16" fill="#94a3b8" text-anchor="middle">Harmoni Audio</text>
+</svg>`, safeLabel)
+
+	return io.NopCloser(strings.NewReader(svg))
 }
 
 // Stat returns file size and modification time.

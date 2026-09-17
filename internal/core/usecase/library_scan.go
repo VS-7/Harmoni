@@ -143,15 +143,50 @@ func (s *LibraryScanService) Scan(ctx context.Context) error {
 
 		var albumID *library.AlbumID
 		if artist != nil {
+			// Check if cover exists in folder or can be written from tag picture
+			dir := filepath.Dir(cleanPath)
+			coverPath := ""
+			for _, cName := range []string{"cover.jpg", "cover.png", "folder.jpg", "front.jpg", "album.jpg"} {
+				cand := filepath.Join(dir, cName)
+				if _, err := os.Stat(cand); err == nil {
+					coverPath = cand
+					break
+				}
+			}
+			if coverPath == "" {
+				base := strings.TrimSuffix(filepath.Base(cleanPath), ext)
+				for _, imgExt := range []string{".jpg", ".png", ".webp"} {
+					cand := filepath.Join(dir, base+imgExt)
+					if _, err := os.Stat(cand); err == nil {
+						coverPath = cand
+						break
+					}
+				}
+			}
+			if coverPath == "" && meta.HasPicture && len(meta.PictureData) > 0 {
+				imgExt := ".jpg"
+				if meta.PictureMIME == "image/png" {
+					imgExt = ".png"
+				}
+				extractedCover := filepath.Join(dir, "cover"+imgExt)
+				if err := os.WriteFile(extractedCover, meta.PictureData, 0644); err == nil {
+					coverPath = extractedCover
+				}
+			}
+
 			album, err := s.albumRepo.FindByTitleAndArtist(ctx, albumTitle, artist.ID)
 			if err != nil || album == nil {
 				aID := library.AlbumID(newUUID())
-				album, err = library.NewAlbum(aID, artist.ID, albumTitle, meta.Year, "")
+				album, err = library.NewAlbum(aID, artist.ID, albumTitle, meta.Year, coverPath)
 				if err == nil {
 					_ = s.albumRepo.Save(ctx, album)
 					albumID = &album.ID
 				}
 			} else {
+				if album.CoverPath == "" && coverPath != "" {
+					album.CoverPath = coverPath
+					_ = s.albumRepo.Update(ctx, album)
+				}
 				albumID = &album.ID
 			}
 		}

@@ -7,6 +7,7 @@ import (
 
 	"harmoni/internal/core/domain/ingest"
 	"harmoni/internal/core/domain/library"
+	"harmoni/internal/core/domain/playlist"
 )
 
 type StreamResult struct {
@@ -65,3 +66,14 @@ type SubsonicUseCase interface {
 	GetSubsonicSong(ctx context.Context, id library.TrackID) (*library.Track, error)
 	GetSimilarSongs(ctx context.Context, seedID library.TrackID, count int) ([]library.Track, error)
 }
+
+type PlaylistUseCase interface {
+	CreatePlaylist(ctx context.Context, name, description string) (*playlist.Playlist, error)
+	GetPlaylist(ctx context.Context, id playlist.PlaylistID) (*playlist.Playlist, error)
+	ListPlaylists(ctx context.Context) ([]*playlist.Playlist, error)
+	DeletePlaylist(ctx context.Context, id playlist.PlaylistID) error
+	AddTrackToPlaylist(ctx context.Context, playlistID playlist.PlaylistID, trackID library.TrackID) error
+	RemoveTrackFromPlaylist(ctx context.Context, playlistID playlist.PlaylistID, trackID library.TrackID) error
+	CreateSmartPlaylist(ctx context.Context, seedTrackID library.TrackID, name string, limit int) (*playlist.Playlist, error)
+}
+

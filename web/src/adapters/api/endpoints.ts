@@ -13,6 +13,11 @@ export const endpoints = {
   radio: `${API_BASE}/radio`,
   downloads: `${API_BASE}/downloads`,
   downloadJob: (id: string) => `${API_BASE}/downloads/${id}`,
+  playlists: `${API_BASE}/playlists`,
+  playlist: (id: string) => `${API_BASE}/playlists/${id}`,
+  playlistTracks: (id: string) => `${API_BASE}/playlists/${id}/tracks`,
+  playlistTrack: (id: string, trackId: string) => `${API_BASE}/playlists/${id}/tracks/${trackId}`,
+  smartPlaylist: `${API_BASE}/playlists/smart`,
   scan: `${API_BASE}/library/scan`,
   health: `${API_BASE}/health`,
 };

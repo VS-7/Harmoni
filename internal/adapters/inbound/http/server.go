@@ -25,6 +25,7 @@ type HandlersConfig struct {
 	ArtistUC   ports.ArtistUseCase
 	ScanUC     ports.LibraryScanUseCase
 	RadioUC    ports.RadioUseCase
+	PlaylistUC ports.PlaylistUseCase
 	IngestUC   ports.IngestUseCase
 	SubsonicUC ports.SubsonicUseCase
 }
@@ -35,10 +36,11 @@ func NewServer(port string, cfg HandlersConfig) *Server {
 	// REST Handlers
 	trackH := rest.NewTrackHandler(cfg.TrackUC)
 	streamH := rest.NewStreamHandler(cfg.TrackUC)
-	coverH := rest.NewCoverHandler(cfg.TrackUC)
+	coverH := rest.NewCoverHandler(cfg.TrackUC, cfg.AlbumUC)
 	albumH := rest.NewAlbumHandler(cfg.AlbumUC)
 	artistH := rest.NewArtistHandler(cfg.ArtistUC)
 	radioH := rest.NewRadioHandler(cfg.RadioUC)
+	playlistH := rest.NewPlaylistHandler(cfg.PlaylistUC)
 	downloadH := rest.NewDownloadHandler(cfg.IngestUC)
 	scanH := rest.NewScanHandler(cfg.ScanUC)
 
@@ -54,6 +56,13 @@ func NewServer(port string, cfg HandlersConfig) *Server {
 	mux.HandleFunc("GET /api/v1/stream/{id}", streamH.ServeHTTP)
 	mux.HandleFunc("GET /api/v1/covers/{id}", coverH.ServeHTTP)
 	mux.HandleFunc("GET /api/v1/radio", radioH.ServeHTTP)
+	mux.HandleFunc("GET /api/v1/playlists", playlistH.ListPlaylists)
+	mux.HandleFunc("POST /api/v1/playlists", playlistH.CreatePlaylist)
+	mux.HandleFunc("POST /api/v1/playlists/smart", playlistH.CreateSmartPlaylist)
+	mux.HandleFunc("GET /api/v1/playlists/{id}", playlistH.GetPlaylist)
+	mux.HandleFunc("DELETE /api/v1/playlists/{id}", playlistH.DeletePlaylist)
+	mux.HandleFunc("POST /api/v1/playlists/{id}/tracks", playlistH.AddTrack)
+	mux.HandleFunc("DELETE /api/v1/playlists/{id}/tracks/{trackId}", playlistH.RemoveTrack)
 	mux.HandleFunc("POST /api/v1/downloads", downloadH.SubmitDownload)
 	mux.HandleFunc("GET /api/v1/downloads/{id}", downloadH.GetStatus)
 	mux.HandleFunc("GET /api/v1/downloads", downloadH.ListJobs)
