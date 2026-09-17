@@ -1,7 +1,6 @@
 package ingest
 
 import (
-	"net/url"
 	"strings"
 	"time"
 )
@@ -15,44 +14,18 @@ type DownloadJob struct {
 	UpdatedAt    time.Time
 }
 
-func ValidateAndSanitizeURL(rawURL string) (string, error) {
-	trimmed := strings.TrimSpace(rawURL)
-	if trimmed == "" {
-		return "", ErrInvalidURL
-	}
-
-	// Reject shell injection attempts (Guardrail 5)
-	dangerousChars := []string{";", "&", "|", "`", "$", "<", ">", "\n", "\r", "\"", "'"}
-	for _, char := range dangerousChars {
-		if strings.Contains(trimmed, char) {
-			return "", ErrUnsafeURL
-		}
-	}
-
-	parsed, err := url.ParseRequestURI(trimmed)
-	if err != nil {
-		return "", ErrInvalidURL
-	}
-
-	scheme := strings.ToLower(parsed.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return "", ErrInvalidURL
-	}
-
-	if parsed.Host == "" {
-		return "", ErrInvalidURL
-	}
-
-	return parsed.String(), nil
-}
-
-func NewDownloadJob(id string, rawURL string) (*DownloadJob, error) {
+// NewDownloadJob validates the link and stores its canonical URL, never the raw user input.
+func NewDownloadJob(id string, rawURL string, mode DownloadMode) (*DownloadJob, error) {
 	cleanID := strings.TrimSpace(id)
 	if cleanID == "" {
 		return nil, ErrEmptyJobID
 	}
 
-	cleanURL, err := ValidateAndSanitizeURL(rawURL)
+	ref, err := ParseSourceURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := ref.ResolveDownload(mode)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +33,7 @@ func NewDownloadJob(id string, rawURL string) (*DownloadJob, error) {
 	now := time.Now().UTC()
 	return &DownloadJob{
 		ID:        cleanID,
-		SourceURL: cleanURL,
+		SourceURL: resolved.CanonicalURL(),
 		Status:    StatusQueued,
 		CreatedAt: now,
 		UpdatedAt: now,

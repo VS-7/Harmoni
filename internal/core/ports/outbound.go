@@ -104,8 +104,21 @@ type TagExtractor interface {
 	ExtractMetadata(filePath string) (*ExtractedMetadata, error)
 }
 
+// DownloadedItem is one audio file produced by a download, in source order.
+type DownloadedItem struct {
+	AudioPath string
+	CoverPath string
+}
+
+type DownloadResult struct {
+	Items      []DownloadedItem
+	IsPlaylist bool
+	// FailedItems counts playlist entries that could not be downloaded (unavailable, private...).
+	FailedItems int
+}
+
 type DownloaderClient interface {
-	Download(ctx context.Context, url string, outputDir string) (downloadedAudioPath string, coverArtPath string, err error)
+	Download(ctx context.Context, canonicalURL string, subDir string) (*DownloadResult, error)
 }
 
 type EmbeddingService interface {

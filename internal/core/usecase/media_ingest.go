@@ -21,9 +21,9 @@ func NewIngestService(jobRepo ports.DownloadJobRepository, jobQueue chan<- strin
 	}
 }
 
-func (s *IngestService) SubmitDownload(ctx context.Context, sourceURL string) (*ingest.DownloadJob, error) {
+func (s *IngestService) SubmitDownload(ctx context.Context, sourceURL string, mode ingest.DownloadMode) (*ingest.DownloadJob, error) {
 	jobID := newUUID()
-	job, err := ingest.NewDownloadJob(jobID, sourceURL)
+	job, err := ingest.NewDownloadJob(jobID, sourceURL, mode)
 	if err != nil {
 		return nil, fmt.Errorf("url ou job inválido: %w", err)
 	}

@@ -3,10 +3,8 @@ package worker
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 
@@ -94,7 +92,7 @@ func (w *DownloadWorker) processJob(ctx context.Context, jobID string) {
 	_ = w.jobRepo.Update(ctx, job)
 
 	// Execute download
-	audioPath, _, err := w.client.Download(ctx, job.SourceURL, "")
+	result, err := w.client.Download(ctx, job.SourceURL, "")
 	if err != nil {
 		slog.ErrorContext(ctx, "falha no download do áudio", "job_id", jobID, "err", err)
 		_ = job.Fail(fmt.Sprintf("erro no download: %v", err))
@@ -102,7 +100,8 @@ func (w *DownloadWorker) processJob(ctx context.Context, jobID string) {
 		return
 	}
 
-	slog.InfoContext(ctx, "áudio baixado com sucesso, disparando varredura da biblioteca", "job_id", jobID, "path", audioPath)
+	slog.InfoContext(ctx, "áudio baixado com sucesso, disparando varredura da biblioteca",
+		"job_id", jobID, "arquivos", len(result.Items), "falhas", result.FailedItems)
 
 	// Scan library to index new track and calculate embedding
 	if w.scanner != nil {
@@ -111,11 +110,10 @@ func (w *DownloadWorker) processJob(ctx context.Context, jobID string) {
 		}
 	}
 
-	// Automatic playlist creation if downloaded URL was a playlist or created a subfolder
-	audioDir := filepath.Dir(audioPath)
-	if w.playlistUC != nil && w.trackRepo != nil && audioDir != w.outputDir {
-		folderName := filepath.Base(audioDir)
-		w.createPlaylistFromFolder(ctx, folderName, audioDir)
+	// Automatic playlist creation, named after the folder yt-dlp created for the playlist
+	if result.IsPlaylist && w.playlistUC != nil && w.trackRepo != nil {
+		folderName := filepath.Base(filepath.Dir(result.Items[0].AudioPath))
+		w.createPlaylistFromItems(ctx, folderName, result.Items)
 	}
 
 	if err := job.Complete(); err != nil {
@@ -126,8 +124,8 @@ func (w *DownloadWorker) processJob(ctx context.Context, jobID string) {
 	slog.InfoContext(ctx, "job de download concluído com sucesso", "job_id", jobID)
 }
 
-func (w *DownloadWorker) createPlaylistFromFolder(ctx context.Context, name, folderPath string) {
-	slog.InfoContext(ctx, "criando ou atualizando playlist a partir de download de playlist", "nome", name, "pasta", folderPath)
+func (w *DownloadWorker) createPlaylistFromItems(ctx context.Context, name string, items []ports.DownloadedItem) {
+	slog.InfoContext(ctx, "criando ou atualizando playlist a partir de download de playlist", "nome", name, "faixas", len(items))
 
 	playlists, err := w.playlistUC.ListPlaylists(ctx)
 	if err != nil {
@@ -138,7 +136,13 @@ func (w *DownloadWorker) createPlaylistFromFolder(ctx context.Context, name, fol
 	var targetPL *playlist.Playlist
 	for _, p := range playlists {
 		if strings.EqualFold(p.Name, name) {
-			targetPL = p
+			// ListPlaylists doesn't load tracks, which are needed to skip duplicates.
+			full, err := w.playlistUC.GetPlaylist(ctx, p.ID)
+			if err != nil {
+				slog.WarnContext(ctx, "falha ao carregar playlist existente", "playlist", p.Name, "err", err)
+				return
+			}
+			targetPL = full
 			break
 		}
 	}
@@ -152,27 +156,29 @@ func (w *DownloadWorker) createPlaylistFromFolder(ctx context.Context, name, fol
 		targetPL = newPL
 	}
 
-	// Collect audio files in folder in sorted order
-	var audioFiles []string
-	_ = filepath.WalkDir(folderPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		ext := strings.ToLower(filepath.Ext(path))
-		if ext == ".mp3" || ext == ".flac" || ext == ".m4a" || ext == ".opus" {
-			audioFiles = append(audioFiles, path)
-		}
-		return nil
-	})
-	sort.Strings(audioFiles)
-
-	for _, fPath := range audioFiles {
-		cleanFPath := filepath.Clean(fPath)
-		tr, err := w.trackRepo.FindByFilePath(ctx, cleanFPath)
-		if err == nil && tr != nil {
-			_ = w.playlistUC.AddTrackToPlaylist(ctx, targetPL.ID, tr.ID)
-		}
+	existing := make(map[string]bool, len(targetPL.Tracks))
+	for _, t := range targetPL.Tracks {
+		existing[string(t.ID)] = true
 	}
 
-	slog.InfoContext(ctx, "playlist populada automaticamente com faixas baixadas", "playlist", name, "faixas_processadas", len(audioFiles))
+	// Items arrive in playlist order from yt-dlp
+	added := 0
+	for _, item := range items {
+		tr, err := w.trackRepo.FindByFilePath(ctx, item.AudioPath)
+		if err != nil || tr == nil {
+			slog.WarnContext(ctx, "faixa baixada não encontrada na biblioteca após varredura", "path", item.AudioPath, "err", err)
+			continue
+		}
+		if existing[string(tr.ID)] {
+			continue
+		}
+		if err := w.playlistUC.AddTrackToPlaylist(ctx, targetPL.ID, tr.ID); err != nil {
+			slog.WarnContext(ctx, "falha ao adicionar faixa na playlist importada", "path", item.AudioPath, "err", err)
+			continue
+		}
+		existing[string(tr.ID)] = true
+		added++
+	}
+
+	slog.InfoContext(ctx, "playlist populada automaticamente com faixas baixadas", "playlist", name, "adicionadas", added)
 }

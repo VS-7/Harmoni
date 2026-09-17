@@ -2,6 +2,8 @@ package rest
 
 import (
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -18,7 +20,17 @@ func NewDownloadHandler(ingestUC ports.IngestUseCase) *DownloadHandler {
 }
 
 type submitDownloadRequest struct {
-	URL string `json:"url"`
+	URL  string              `json:"url"`
+	Mode ingest.DownloadMode `json:"mode"`
+}
+
+// Domain validation errors are safe to show to the user as-is.
+var downloadValidationErrors = []error{
+	ingest.ErrInvalidURL,
+	ingest.ErrUnsafeURL,
+	ingest.ErrUnsupportedSource,
+	ingest.ErrInvalidSourceID,
+	ingest.ErrInvalidDownloadMode,
 }
 
 func (h *DownloadHandler) SubmitDownload(w http.ResponseWriter, r *http.Request) {
@@ -28,9 +40,16 @@ func (h *DownloadHandler) SubmitDownload(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	job, err := h.ingestUC.SubmitDownload(r.Context(), req.URL)
+	job, err := h.ingestUC.SubmitDownload(r.Context(), req.URL, req.Mode)
 	if err != nil {
-		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusBadRequest)
+		for _, domainErr := range downloadValidationErrors {
+			if errors.Is(err, domainErr) {
+				writeDownloadError(w, http.StatusBadRequest, domainErr.Error())
+				return
+			}
+		}
+		slog.ErrorContext(r.Context(), "falha ao enfileirar download", "err", err)
+		writeDownloadError(w, http.StatusInternalServerError, "falha ao enfileirar download")
 		return
 	}
 
@@ -76,4 +95,10 @@ func (h *DownloadHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 		"data":  jobs,
 		"count": len(jobs),
 	})
+}
+
+func writeDownloadError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }

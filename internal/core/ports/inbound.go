@@ -53,7 +53,7 @@ type RadioUseCase interface {
 }
 
 type IngestUseCase interface {
-	SubmitDownload(ctx context.Context, sourceURL string) (*ingest.DownloadJob, error)
+	SubmitDownload(ctx context.Context, sourceURL string, mode ingest.DownloadMode) (*ingest.DownloadJob, error)
 	GetJobStatus(ctx context.Context, jobID string) (*ingest.DownloadJob, error)
 	ListJobs(ctx context.Context, limit int) ([]ingest.DownloadJob, error)
 }

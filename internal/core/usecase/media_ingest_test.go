@@ -46,7 +46,7 @@ func TestSubmitDownloadAndQueuing(t *testing.T) {
 
 	svc := usecase.NewIngestService(repo, queue)
 
-	job, err := svc.SubmitDownload(ctx, "https://www.youtube.com/watch?v=valid123")
+	job, err := svc.SubmitDownload(ctx, "https://www.youtube.com/watch?v=dQw4w9WgXcQ", ingest.ModeDefault)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

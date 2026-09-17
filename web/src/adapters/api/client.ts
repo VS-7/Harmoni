@@ -1,7 +1,7 @@
 import { endpoints } from './endpoints.ts';
 import type { Track } from '../../domain/track.ts';
 import type { Album, Artist } from '../../domain/album.ts';
-import type { DownloadJob } from '../../domain/download.ts';
+import type { DownloadJob, DownloadMode } from '../../domain/download.ts';
 import type { Playlist } from '../../domain/playlist.ts';
 
 export const apiClient = {
@@ -115,11 +115,11 @@ export const apiClient = {
     if (!res.ok) throw new Error('Falha ao remover música da playlist');
   },
 
-  async submitDownload(url: string): Promise<DownloadJob> {
+  async submitDownload(url: string, mode?: DownloadMode): Promise<DownloadJob> {
     const res = await fetch(endpoints.downloads, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, mode }),
     });
     if (!res.ok) {
       const errJson = await res.json().catch(() => ({ error: 'Erro no download' }));

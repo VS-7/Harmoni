@@ -1,15 +1,19 @@
 package ytdlp
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"harmoni/internal/core/domain/ingest"
+	"harmoni/internal/core/ports"
 )
 
 type Downloader struct {
@@ -28,19 +32,26 @@ func NewDownloader(outputDir string) (*Downloader, error) {
 }
 
 // Download invokes yt-dlp throttled with nice -n 19, supporting single tracks or full playlists (Guardrails 4 & 5).
-func (d *Downloader) Download(ctx context.Context, rawURL string, subDir string) (string, string, error) {
-	safeURL, err := ingest.ValidateAndSanitizeURL(rawURL)
+// The exact files produced are read from yt-dlp itself instead of scanning the output directory.
+func (d *Downloader) Download(ctx context.Context, canonicalURL string, subDir string) (*ports.DownloadResult, error) {
+	ref, err := ingest.ParseDownloadURL(canonicalURL)
 	if err != nil {
-		return "", "", fmt.Errorf("url insegura ou inválida para download: %w", err)
+		return nil, fmt.Errorf("url insegura ou inválida para download: %w", err)
 	}
+	// Rebuild once more so only validated IDs reach the command line.
+	safeURL := ref.CanonicalURL()
+	isPlaylist := ref.Kind == ingest.KindPlaylist
 
 	targetDir := d.outputDir
 	if subDir != "" {
 		targetDir = filepath.Join(d.outputDir, filepath.Clean(subDir))
-		_ = os.MkdirAll(targetDir, 0755)
+		if !isWithin(d.outputDir, targetDir) {
+			return nil, fmt.Errorf("subdiretório fora da pasta de downloads: %s", subDir)
+		}
+		if err := os.MkdirAll(targetDir, 0755); err != nil {
+			return nil, fmt.Errorf("falha ao criar subdiretório de download: %w", err)
+		}
 	}
-
-	isPlaylist := strings.Contains(safeURL, "list=") || strings.Contains(safeURL, "/playlist")
 
 	var outputTemplate string
 	if isPlaylist {
@@ -57,47 +68,116 @@ func (d *Downloader) Download(ctx context.Context, rawURL string, subDir string)
 		"--extract-audio",
 		"--audio-format", "mp3",
 		"--audio-quality", "0",
-		"--add-metadata",
 		"--embed-metadata",
 		"--write-thumbnail",
 		"--convert-thumbnails", "jpg",
 		"--embed-thumbnail",
+		"--no-progress",
+		"--no-simulate",
+		// One final path per line on stdout, in download order.
+		"--print", "after_move:filepath",
 	}
 
 	if isPlaylist {
-		args = append(args, "--yes-playlist")
+		// Skip unavailable entries instead of aborting the whole playlist.
+		args = append(args, "--yes-playlist", "--ignore-errors")
+		if ref.IsMix() {
+			args = append(args, "--playlist-end", strconv.Itoa(ingest.MixPlaylistLimit))
+		}
 	} else {
 		args = append(args, "--no-playlist")
 	}
 
-	args = append(args, "--output", outputTemplate, safeURL)
+	// "--" ends option parsing, so the URL can never be read as a flag.
+	args = append(args, "--output", outputTemplate, "--", safeURL)
 
+	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, "nice", args...)
-	output, err := cmd.CombinedOutput()
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	runErr := cmd.Run()
+
+	result := &ports.DownloadResult{
+		Items:       d.collectItems(ctx, stdout.String(), targetDir),
+		IsPlaylist:  isPlaylist,
+		FailedItems: countErrorLines(stderr.String()),
+	}
+
+	if runErr != nil {
+		// With --ignore-errors yt-dlp exits non-zero when any entry failed; partial playlists still count.
+		if !isPlaylist || len(result.Items) == 0 {
+			slog.ErrorContext(ctx, "falha ao executar yt-dlp", "stderr", stderr.String(), "err", runErr)
+			return nil, fmt.Errorf("erro no download com yt-dlp: %w (%s)", runErr, lastErrorLine(stderr.String()))
+		}
+		slog.WarnContext(ctx, "playlist baixada parcialmente", "baixadas", len(result.Items), "falhas", result.FailedItems, "stderr", stderr.String())
+	}
+
+	if len(result.Items) == 0 {
+		return nil, fmt.Errorf("nenhum arquivo de áudio foi gerado pelo download")
+	}
+
+	slog.InfoContext(ctx, "download concluído com sucesso", "arquivos", len(result.Items), "falhas", result.FailedItems, "isPlaylist", isPlaylist)
+	return result, nil
+}
+
+func (d *Downloader) collectItems(ctx context.Context, stdout string, targetDir string) []ports.DownloadedItem {
+	var items []ports.DownloadedItem
+	seen := make(map[string]bool)
+
+	scanner := bufio.NewScanner(strings.NewReader(stdout))
+	for scanner.Scan() {
+		audioPath := filepath.Clean(strings.TrimSpace(scanner.Text()))
+		if audioPath == "." || seen[audioPath] {
+			continue
+		}
+		// Guardrail 5: only accept files that really live inside the download directory.
+		if !filepath.IsAbs(audioPath) || !isWithin(targetDir, audioPath) {
+			slog.WarnContext(ctx, "yt-dlp reportou caminho fora da pasta de downloads, ignorando", "path", audioPath)
+			continue
+		}
+		if _, err := os.Stat(audioPath); err != nil {
+			slog.WarnContext(ctx, "arquivo reportado pelo yt-dlp não existe", "path", audioPath, "err", err)
+			continue
+		}
+		seen[audioPath] = true
+
+		item := ports.DownloadedItem{AudioPath: audioPath}
+		coverPath := strings.TrimSuffix(audioPath, filepath.Ext(audioPath)) + ".jpg"
+		if _, err := os.Stat(coverPath); err == nil {
+			item.CoverPath = coverPath
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+func isWithin(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
 	if err != nil {
-		slog.ErrorContext(ctx, "falha ao executar yt-dlp", "output", string(output), "err", err)
-		return "", "", fmt.Errorf("erro no download com yt-dlp: %w (output: %s)", err, string(output))
+		return false
 	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
 
-	// Walk target directory recursively to find the downloaded audio and cover
-	var audioPath, coverPath string
-	_ = filepath.Walk(targetDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
-			return nil
+func countErrorLines(stderr string) int {
+	count := 0
+	for _, line := range strings.Split(stderr, "\n") {
+		if strings.HasPrefix(line, "ERROR:") {
+			count++
 		}
-		name := strings.ToLower(info.Name())
-		if strings.HasSuffix(name, ".mp3") {
-			audioPath = path
-		} else if strings.HasSuffix(name, ".jpg") || strings.HasSuffix(name, ".png") {
-			coverPath = path
-		}
-		return nil
-	})
-
-	if audioPath == "" {
-		return "", "", fmt.Errorf("nenhum arquivo de áudio foi encontrado após o download")
 	}
+	return count
+}
 
-	slog.InfoContext(ctx, "download concluído com sucesso", "audioPath", audioPath, "coverPath", coverPath, "isPlaylist", isPlaylist)
-	return audioPath, coverPath, nil
+func lastErrorLine(stderr string) string {
+	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.HasPrefix(lines[i], "ERROR:") {
+			return lines[i]
+		}
+	}
+	if len(lines) > 0 {
+		return lines[len(lines)-1]
+	}
+	return "sem detalhes"
 }

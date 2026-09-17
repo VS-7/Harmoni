@@ -51,7 +51,7 @@ export const DownloadsView: React.FC = () => {
             Aquisição e Download de Mídia
           </h2>
           <p className="text-xs text-zinc-400 mt-1">
-            Cole um link do YouTube, YouTube Music ou SoundCloud. O servidor baixará o áudio em alta qualidade, extrairá a capa e indexará com embeddings vetoriais.
+            Cole um link de música ou playlist do YouTube ou YouTube Music. Links de música dentro de uma playlist baixam a playlist inteira. O servidor baixará o áudio em alta qualidade, extrairá a capa e indexará com embeddings vetoriais.
           </p>
         </div>
 

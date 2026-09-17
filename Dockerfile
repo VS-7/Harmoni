@@ -46,10 +46,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/harmoni ./cmd/ser
 FROM alpine:3.21 AS runtime
 
 # Instalação das ferramentas essenciais de áudio e ingestão
+# deno: runtime JavaScript exigido pelo yt-dlp para extrair formatos do YouTube
 RUN apk add --no-cache \
     ca-certificates \
     tzdata \
     ffmpeg \
+    deno \
     python3 \
     py3-pip \
     curl \
