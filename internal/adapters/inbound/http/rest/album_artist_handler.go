@@ -30,6 +30,9 @@ func (h *AlbumHandler) ListAlbums(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "falha ao listar álbuns"}`, http.StatusInternalServerError)
 		return
 	}
+	if albums == nil {
+		albums = []library.Album{}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -110,6 +113,9 @@ func (h *ArtistHandler) ListArtists(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, `{"error": "falha ao listar artistas"}`, http.StatusInternalServerError)
 		return
+	}
+	if artists == nil {
+		artists = []library.Artist{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

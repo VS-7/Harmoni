@@ -94,13 +94,13 @@ export const DownloadsView: React.FC = () => {
           Fila de Processamento (Single-Worker)
         </h3>
 
-        {jobs.length === 0 ? (
+        {(!jobs || jobs.length === 0) ? (
           <div className="text-center py-12 text-zinc-500 text-sm bg-zinc-900/30 rounded-xl border border-zinc-800/40">
             Nenhum download registrado recentemente
           </div>
         ) : (
           <div className="divide-y divide-zinc-800/50 bg-zinc-900/40 rounded-xl border border-zinc-800 overflow-hidden">
-            {jobs.map((job) => {
+            {(jobs || []).map((job) => {
               let statusBadge = null;
               if (job.Status === 'completed') {
                 statusBadge = (

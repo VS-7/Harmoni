@@ -9,7 +9,8 @@ export const apiClient = {
     if (query) params.set('q', query);
     const res = await fetch(`${endpoints.tracks}?${params.toString()}`);
     if (!res.ok) throw new Error('Falha ao buscar músicas');
-    return res.json();
+    const json = await res.json();
+    return { data: json.data || [], total: json.total || 0 };
   },
 
   async getTrack(id: string): Promise<Track> {
@@ -22,20 +23,23 @@ export const apiClient = {
     const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
     const res = await fetch(`${endpoints.albums}?${params.toString()}`);
     if (!res.ok) throw new Error('Falha ao buscar álbuns');
-    return res.json();
+    const json = await res.json();
+    return { data: json.data || [], total: json.total || 0 };
   },
 
   async getAlbum(id: string): Promise<{ album: Album; tracks: Track[] }> {
     const res = await fetch(endpoints.album(id));
     if (!res.ok) throw new Error('Álbum não encontrado');
-    return res.json();
+    const json = await res.json();
+    return { album: json.album, tracks: json.tracks || [] };
   },
 
   async listArtists(offset = 0, limit = 50): Promise<{ data: Artist[]; total: number }> {
     const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
     const res = await fetch(`${endpoints.artists}?${params.toString()}`);
     if (!res.ok) throw new Error('Falha ao buscar artistas');
-    return res.json();
+    const json = await res.json();
+    return { data: json.data || [], total: json.total || 0 };
   },
 
   async getRadio(seedId: string, limit = 20, recentArtists: string[] = [], recentTracks: string[] = []): Promise<Track[]> {

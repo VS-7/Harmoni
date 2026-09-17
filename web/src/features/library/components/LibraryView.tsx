@@ -32,14 +32,14 @@ export const LibraryView: React.FC = () => {
         apiClient.listAlbums(0, 50).catch(() => ({ data: [], total: 0 })),
         offlineStorage.listOfflineTracks().catch(() => []),
       ]);
-      setTracks(tracksRes.data);
-      setAlbums(albumsRes.data);
-      setOfflineTracks(offlineList);
+      setTracks(tracksRes?.data || []);
+      setAlbums(albumsRes?.data || []);
+      setOfflineTracks(offlineList || []);
     } catch {
       // Fallback to offline tracks if server is unreachable
       const offlineList = await offlineStorage.listOfflineTracks().catch(() => []);
-      setOfflineTracks(offlineList);
-      setTracks(offlineList);
+      setOfflineTracks(offlineList || []);
+      setTracks(offlineList || []);
     } finally {
       setLoading(false);
     }
@@ -84,7 +84,7 @@ export const LibraryView: React.FC = () => {
             }`}
           >
             <Music2 size={16} />
-            Músicas ({tracks.length})
+            Músicas ({(tracks || []).length})
           </button>
 
           <button
@@ -99,7 +99,7 @@ export const LibraryView: React.FC = () => {
             }`}
           >
             <Disc3 size={16} />
-            Álbuns ({albums.length})
+            Álbuns ({(albums || []).length})
           </button>
 
           <button
@@ -114,7 +114,7 @@ export const LibraryView: React.FC = () => {
             }`}
           >
             <HardDriveDownload size={16} />
-            Offline ({offlineTracks.length})
+            Offline ({(offlineTracks || []).length})
           </button>
         </div>
 
@@ -171,7 +171,7 @@ export const LibraryView: React.FC = () => {
               Carregando biblioteca...
             </div>
           ) : activeTab === 'tracks' ? (
-            tracks.length === 0 ? (
+            (!tracks || tracks.length === 0) ? (
               <div className="text-center py-20 text-zinc-500 text-sm">
                 Nenhuma música encontrada. Clique no ícone de atualização para escanear a pasta ou baixe uma música pela aba Downloads!
               </div>
@@ -179,7 +179,7 @@ export const LibraryView: React.FC = () => {
               <TrackList tracks={tracks} />
             )
           ) : activeTab === 'albums' ? (
-            albums.length === 0 ? (
+            (!albums || albums.length === 0) ? (
               <div className="text-center py-20 text-zinc-500 text-sm">Nenhum álbum indexado.</div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -193,7 +193,7 @@ export const LibraryView: React.FC = () => {
               </div>
             )
           ) : (
-            offlineTracks.length === 0 ? (
+            (!offlineTracks || offlineTracks.length === 0) ? (
               <div className="text-center py-20 text-zinc-500 text-sm">
                 Nenhuma música salva offline ainda. Clique no ícone de download ao lado de qualquer música para torná-la disponível sem internet!
               </div>

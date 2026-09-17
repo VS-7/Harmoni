@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"harmoni/internal/core/domain/ingest"
 	"harmoni/internal/core/ports"
 )
 
@@ -65,6 +66,9 @@ func (h *DownloadHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, `{"error": "falha ao listar jobs"}`, http.StatusInternalServerError)
 		return
+	}
+	if jobs == nil {
+		jobs = []ingest.DownloadJob{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
