@@ -20,7 +20,7 @@ RUN npm run build
 # ------------------------------------------------------------------------------
 # Stage 2: Build do Backend (Go 1.26)
 # ------------------------------------------------------------------------------
-FROM golang:1.26-alpine AS backend-builder
+FROM golang:alpine AS backend-builder
 WORKDIR /app
 
 # Dependências do sistema para compilação CGO-free
