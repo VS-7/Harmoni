@@ -7,6 +7,7 @@ const (
 	StatusProcessing JobStatus = "processing"
 	StatusCompleted  JobStatus = "completed"
 	StatusFailed     JobStatus = "failed"
+	StatusCanceled   JobStatus = "canceled"
 )
 
 func (s JobStatus) String() string {
@@ -14,5 +15,5 @@ func (s JobStatus) String() string {
 }
 
 func (s JobStatus) IsTerminal() bool {
-	return s == StatusCompleted || s == StatusFailed
+	return s == StatusCompleted || s == StatusFailed || s == StatusCanceled
 }

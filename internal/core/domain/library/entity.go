@@ -62,7 +62,11 @@ type Track struct {
 	Bitrate     int
 	Genre       string
 	Embedding   []float32
-	CreatedAt   time.Time
+	// SourceProvider and SourceID link the track back to the remote catalog item it
+	// came from, which powers the "already in library" flag in discovery (RF7.1).
+	SourceProvider string
+	SourceID       string
+	CreatedAt      time.Time
 }
 
 func NewTrack(id TrackID, title string, artistID ArtistID, duration time.Duration, path string, size int64, format AudioFormat) (*Track, error) {
@@ -101,6 +105,12 @@ func (t *Track) SetAlbum(albumID AlbumID, trackNumber int) {
 func (t *Track) SetMetadata(bitrate int, genre string) {
 	t.Bitrate = bitrate
 	t.Genre = strings.TrimSpace(genre)
+}
+
+// SetSource records which remote catalog item produced this file.
+func (t *Track) SetSource(provider, sourceID string) {
+	t.SourceProvider = strings.TrimSpace(provider)
+	t.SourceID = strings.TrimSpace(sourceID)
 }
 
 func (t *Track) SetEmbedding(embedding []float32) {

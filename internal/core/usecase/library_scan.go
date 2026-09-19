@@ -11,18 +11,19 @@ import (
 	"strings"
 	"time"
 
+	"harmoni/internal/core/domain/ingest"
 	"harmoni/internal/core/domain/library"
 	"harmoni/internal/core/ports"
 )
 
 type LibraryScanService struct {
-	musicDir      string
-	trackRepo     ports.TrackRepository
-	albumRepo     ports.AlbumRepository
-	artistRepo    ports.ArtistRepository
-	tagExtractor  ports.TagExtractor
-	storage       ports.AudioFileStorage
-	embedder      ports.EmbeddingService
+	musicDir     string
+	trackRepo    ports.TrackRepository
+	albumRepo    ports.AlbumRepository
+	artistRepo   ports.ArtistRepository
+	tagExtractor ports.TagExtractor
+	storage      ports.AudioFileStorage
+	embedder     ports.EmbeddingService
 }
 
 func NewLibraryScanService(
@@ -217,6 +218,12 @@ func (s *LibraryScanService) Scan(ctx context.Context) error {
 			track.SetAlbum(*albumID, meta.TrackNumber)
 		}
 		track.SetMetadata(meta.Bitrate, meta.Genre)
+
+		// Downloaded files carry the remote id in the name ("Título [<id>].mp3"), which
+		// backfills tracks.source_id and drives the "in_library" flag of discovery (RF7.1).
+		if sourceID := ingest.SourceIDFromFilename(cleanPath); sourceID != "" {
+			track.SetSource(string(ingest.ProviderYouTube), sourceID)
+		}
 
 		// Generate embedding
 		embedText := fmt.Sprintf("%s %s %s %s", title, artistName, albumTitle, meta.Genre)

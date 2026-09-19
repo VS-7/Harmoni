@@ -36,8 +36,9 @@ func (r *TrackRepository) Save(ctx context.Context, track *library.Track) error 
 	query := `
 		INSERT INTO tracks (
 			id, album_id, artist_id, title, track_number, duration,
-			file_path, file_format, file_size, bitrate, genre, embedding, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			file_path, file_format, file_size, bitrate, genre, embedding, created_at,
+			source_provider, source_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		ON CONFLICT (id) DO UPDATE SET
 			album_id = EXCLUDED.album_id,
 			artist_id = EXCLUDED.artist_id,
@@ -49,7 +50,9 @@ func (r *TrackRepository) Save(ctx context.Context, track *library.Track) error 
 			file_size = EXCLUDED.file_size,
 			bitrate = EXCLUDED.bitrate,
 			genre = EXCLUDED.genre,
-			embedding = EXCLUDED.embedding
+			embedding = EXCLUDED.embedding,
+			source_provider = COALESCE(EXCLUDED.source_provider, tracks.source_provider),
+			source_id = COALESCE(EXCLUDED.source_id, tracks.source_id)
 	`
 	durationSec := int(track.Duration.Seconds())
 
@@ -67,6 +70,8 @@ func (r *TrackRepository) Save(ctx context.Context, track *library.Track) error 
 		track.Genre,
 		vec,
 		track.CreatedAt,
+		nullableString(track.SourceProvider),
+		nullableString(track.SourceID),
 	)
 	if err != nil {
 		return fmt.Errorf("falha ao salvar faixa no banco: %w", err)
@@ -91,7 +96,8 @@ func (r *TrackRepository) FindByID(ctx context.Context, id library.TrackID) (*li
 		SELECT 
 			t.id, t.album_id, t.artist_id, COALESCE(a.name, ''), COALESCE(al.title, ''),
 			t.title, t.track_number, t.duration, t.file_path, t.file_format,
-			t.file_size, t.bitrate, t.genre, t.embedding, t.created_at
+			t.file_size, t.bitrate, t.genre, t.embedding, t.created_at,
+			COALESCE(t.source_provider, ''), COALESCE(t.source_id, '')
 		FROM tracks t
 		LEFT JOIN artists a ON t.artist_id = a.id
 		LEFT JOIN albums al ON t.album_id = al.id
@@ -105,7 +111,8 @@ func (r *TrackRepository) FindByFilePath(ctx context.Context, filePath string) (
 		SELECT 
 			t.id, t.album_id, t.artist_id, COALESCE(a.name, ''), COALESCE(al.title, ''),
 			t.title, t.track_number, t.duration, t.file_path, t.file_format,
-			t.file_size, t.bitrate, t.genre, t.embedding, t.created_at
+			t.file_size, t.bitrate, t.genre, t.embedding, t.created_at,
+			COALESCE(t.source_provider, ''), COALESCE(t.source_id, '')
 		FROM tracks t
 		LEFT JOIN artists a ON t.artist_id = a.id
 		LEFT JOIN albums al ON t.album_id = al.id
@@ -144,7 +151,8 @@ func (r *TrackRepository) List(ctx context.Context, offset, limit int, query str
 		SELECT 
 			t.id, t.album_id, t.artist_id, COALESCE(a.name, ''), COALESCE(al.title, ''),
 			t.title, t.track_number, t.duration, t.file_path, t.file_format,
-			t.file_size, t.bitrate, t.genre, t.embedding, t.created_at
+			t.file_size, t.bitrate, t.genre, t.embedding, t.created_at,
+			COALESCE(t.source_provider, ''), COALESCE(t.source_id, '')
 		FROM tracks t
 		LEFT JOIN artists a ON t.artist_id = a.id
 		LEFT JOIN albums al ON t.album_id = al.id
@@ -177,7 +185,8 @@ func (r *TrackRepository) ListByAlbumID(ctx context.Context, albumID library.Alb
 		SELECT 
 			t.id, t.album_id, t.artist_id, COALESCE(a.name, ''), COALESCE(al.title, ''),
 			t.title, t.track_number, t.duration, t.file_path, t.file_format,
-			t.file_size, t.bitrate, t.genre, t.embedding, t.created_at
+			t.file_size, t.bitrate, t.genre, t.embedding, t.created_at,
+			COALESCE(t.source_provider, ''), COALESCE(t.source_id, '')
 		FROM tracks t
 		LEFT JOIN artists a ON t.artist_id = a.id
 		LEFT JOIN albums al ON t.album_id = al.id
@@ -207,7 +216,8 @@ func (r *TrackRepository) ListByArtistID(ctx context.Context, artistID library.A
 		SELECT 
 			t.id, t.album_id, t.artist_id, COALESCE(a.name, ''), COALESCE(al.title, ''),
 			t.title, t.track_number, t.duration, t.file_path, t.file_format,
-			t.file_size, t.bitrate, t.genre, t.embedding, t.created_at
+			t.file_size, t.bitrate, t.genre, t.embedding, t.created_at,
+			COALESCE(t.source_provider, ''), COALESCE(t.source_id, '')
 		FROM tracks t
 		LEFT JOIN artists a ON t.artist_id = a.id
 		LEFT JOIN albums al ON t.album_id = al.id
@@ -247,6 +257,8 @@ func (r *TrackRepository) scanTrack(row pgx.Row) (*library.Track, error) {
 		genre                string
 		vec                  *pgvector.Vector
 		createdAt            time.Time
+		sourceProvider       string
+		sourceID             string
 	)
 
 	err := row.Scan(
@@ -265,6 +277,8 @@ func (r *TrackRepository) scanTrack(row pgx.Row) (*library.Track, error) {
 		&genre,
 		&vec,
 		&createdAt,
+		&sourceProvider,
+		&sourceID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -287,6 +301,7 @@ func (r *TrackRepository) scanTrack(row pgx.Row) (*library.Track, error) {
 	tr.Bitrate = bitrate
 	tr.Genre = genre
 	tr.CreatedAt = createdAt
+	tr.SetSource(sourceProvider, sourceID)
 
 	if albumIDStr != nil {
 		aID := library.AlbumID(*albumIDStr)
@@ -314,6 +329,8 @@ func (r *TrackRepository) scanTrackRow(rows pgx.Rows) (*library.Track, error) {
 		genre                string
 		vec                  *pgvector.Vector
 		createdAt            time.Time
+		sourceProvider       string
+		sourceID             string
 	)
 
 	err := rows.Scan(
@@ -332,6 +349,8 @@ func (r *TrackRepository) scanTrackRow(rows pgx.Rows) (*library.Track, error) {
 		&genre,
 		&vec,
 		&createdAt,
+		&sourceProvider,
+		&sourceID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao ler linha de faixa: %w", err)
@@ -351,6 +370,7 @@ func (r *TrackRepository) scanTrackRow(rows pgx.Rows) (*library.Track, error) {
 	tr.Bitrate = bitrate
 	tr.Genre = genre
 	tr.CreatedAt = createdAt
+	tr.SetSource(sourceProvider, sourceID)
 
 	if albumIDStr != nil {
 		aID := library.AlbumID(*albumIDStr)
@@ -361,4 +381,32 @@ func (r *TrackRepository) scanTrackRow(rows pgx.Rows) (*library.Track, error) {
 	}
 
 	return tr, nil
+}
+
+// FindTrackIDsBySource maps the remote ids that are already indexed locally, so the
+// discovery results can be flagged with "in_library" in a single query (RF7.1).
+func (r *TrackRepository) FindTrackIDsBySource(ctx context.Context, provider string, sourceIDs []string) (map[string]library.TrackID, error) {
+	found := make(map[string]library.TrackID, len(sourceIDs))
+	if provider == "" || len(sourceIDs) == 0 {
+		return found, nil
+	}
+
+	query := `SELECT source_id, id FROM tracks WHERE source_provider = $1 AND source_id = ANY($2)`
+	rows, err := r.pool.Query(ctx, query, provider, sourceIDs)
+	if err != nil {
+		return nil, fmt.Errorf("falha ao buscar faixas por origem remota: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var sourceID, trackID string
+		if err := rows.Scan(&sourceID, &trackID); err != nil {
+			return nil, fmt.Errorf("falha ao ler faixa por origem remota: %w", err)
+		}
+		found[sourceID] = library.TrackID(trackID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("falha ao percorrer faixas por origem remota: %w", err)
+	}
+	return found, nil
 }

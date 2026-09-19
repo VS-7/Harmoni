@@ -106,3 +106,32 @@ func TestNewDownloadJobRejectsInvalidInput(t *testing.T) {
 		}
 	}
 }
+
+// A retry must revive an item left as processing by a restart, without touching the
+// ones that already finished.
+func TestJobItemRequeueRevivesStaleProcessing(t *testing.T) {
+	item, err := ingest.NewJobItem("item-1", "job-1", 0, "lBDDMrUCz1A", "Tempo Perdido")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := item.StartProcessing(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := item.Requeue(); err != nil {
+		t.Fatalf("item travado em processing deveria voltar para a fila: %v", err)
+	}
+	if item.Status != ingest.ItemQueued {
+		t.Errorf("status esperado queued, veio %s", item.Status)
+	}
+
+	if err := item.StartProcessing(); err != nil {
+		t.Fatal(err)
+	}
+	if err := item.Complete("track-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := item.Requeue(); err == nil {
+		t.Error("item concluído não deveria ser reenfileirado")
+	}
+}

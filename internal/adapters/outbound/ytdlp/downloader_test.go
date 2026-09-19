@@ -7,7 +7,28 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"harmoni/internal/core/domain/ingest"
+	"harmoni/internal/core/ports"
 )
+
+// requestFor builds the validated request the worker sends, from a user-facing link.
+func requestFor(t *testing.T, rawURL string, subDir string) ports.DownloadRequest {
+	return requestForMode(t, rawURL, subDir, ingest.ModeDefault)
+}
+
+func requestForMode(t *testing.T, rawURL, subDir string, mode ingest.DownloadMode) ports.DownloadRequest {
+	t.Helper()
+	ref, err := ingest.ParseSourceURL(rawURL)
+	if err != nil {
+		t.Fatalf("url de teste inválida %q: %v", rawURL, err)
+	}
+	resolved, err := ref.ResolveDownload(mode)
+	if err != nil {
+		t.Fatalf("não foi possível resolver %q: %v", rawURL, err)
+	}
+	return ports.DownloadRequest{Ref: resolved, SubDir: subDir}
+}
 
 // fakeYtDlp installs a yt-dlp stub in PATH that records its arguments and runs body.
 func fakeYtDlp(t *testing.T, body string) (argsFile string) {
@@ -54,7 +75,7 @@ exit 1`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := d.Download(context.Background(), "https://www.youtube.com/playlist?list=PLaf863IOhXhx6dfO2s9Foqn01LjrEnBH6", "")
+	res, err := d.Download(context.Background(), requestFor(t, "https://www.youtube.com/playlist?list=PLaf863IOhXhx6dfO2s9Foqn01LjrEnBH6", ""))
 	if err != nil {
 		t.Fatalf("playlist parcial não deveria falhar: %v", err)
 	}
@@ -77,7 +98,9 @@ exit 1`)
 	}
 }
 
-func TestDownloadMixIsCapped(t *testing.T) {
+// A mix defaults to the seed track (RF6.2), and only gets capped when the user
+// explicitly asks for the whole thing.
+func TestDownloadMixDefaultsToSingleTrack(t *testing.T) {
 	out := t.TempDir()
 	argsFile := fakeYtDlp(t, `touch "`+out+`/a.mp3"; echo "`+out+`/a.mp3"`)
 
@@ -85,12 +108,30 @@ func TestDownloadMixIsCapped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.Download(context.Background(), "https://www.youtube.com/watch?list=RDlBDDMrUCz1A&v=lBDDMrUCz1A", ""); err != nil {
+	if _, err := d.Download(context.Background(), requestFor(t, "https://www.youtube.com/watch?list=RDlBDDMrUCz1A&v=lBDDMrUCz1A", "")); err != nil {
+		t.Fatal(err)
+	}
+	args := readArgs(t, argsFile)
+	if !contains(args, "--no-playlist") {
+		t.Errorf("mix sem modo explícito deve baixar só a faixa semente: %v", args)
+	}
+}
+
+func TestDownloadMixAsPlaylistIsCapped(t *testing.T) {
+	out := t.TempDir()
+	argsFile := fakeYtDlp(t, `touch "`+out+`/a.mp3"; echo "`+out+`/a.mp3"`)
+
+	d, err := NewDownloader(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := requestForMode(t, "https://www.youtube.com/watch?list=RDlBDDMrUCz1A&v=lBDDMrUCz1A", "", ingest.ModePlaylist)
+	if _, err := d.Download(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
 	args := readArgs(t, argsFile)
 	if !contains(args, "--yes-playlist") || !contains(args, "--playlist-end") {
-		t.Errorf("mix deve ser baixado como playlist limitada: %v", args)
+		t.Errorf("mix pedido como playlist deve vir limitado: %v", args)
 	}
 }
 
@@ -102,22 +143,53 @@ func TestDownloadTrackFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = d.Download(context.Background(), "https://www.youtube.com/watch?v=lBDDMrUCz1A", "")
+	_, err = d.Download(context.Background(), requestFor(t, "https://www.youtube.com/watch?v=lBDDMrUCz1A", ""))
 	if err == nil || !strings.Contains(err.Error(), "Private video") {
 		t.Fatalf("esperava erro com a mensagem do yt-dlp, veio: %v", err)
 	}
 }
 
-func TestDownloadRejectsUnsafeInput(t *testing.T) {
+func TestDownloadRejectsUnsupportedProvider(t *testing.T) {
 	d, err := NewDownloader(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.Download(context.Background(), "https://evil.com/watch?v=lBDDMrUCz1A", ""); err == nil {
-		t.Error("host fora da allowlist deveria falhar")
+
+	// The allowlist is enforced before a reference ever exists.
+	if _, err := ingest.ParseSourceURL("https://evil.com/watch?v=lBDDMrUCz1A"); err == nil {
+		t.Error("host fora da allowlist deveria falhar na análise da url")
 	}
-	if _, err := d.Download(context.Background(), "https://www.youtube.com/watch?v=lBDDMrUCz1A", "../../etc"); err == nil {
-		t.Error("subdiretório com traversal deveria falhar")
+
+	req := ports.DownloadRequest{Ref: ingest.SourceRef{Provider: "soundcloud", Kind: ingest.KindTrack, VideoID: "lBDDMrUCz1A"}}
+	if _, err := d.Download(context.Background(), req); err == nil {
+		t.Error("provedor não suportado deveria falhar")
+	}
+}
+
+// Guardrail 5: a crafted folder name must never escape the media root.
+func TestDownloadKeepsSubDirInsideRoot(t *testing.T) {
+	out := t.TempDir()
+	fakeYtDlp(t, `exit 1`)
+
+	d, err := NewDownloader(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The download itself fails (the stub exits 1); what matters is where it pointed.
+	_, _ = d.Download(context.Background(), requestFor(t, "https://www.youtube.com/watch?v=lBDDMrUCz1A", "../../etc"))
+
+	entries, err := os.ReadDir(filepath.Dir(out))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Name() == "etc" {
+			t.Fatalf("subdiretório escapou da raiz de mídia: %s", filepath.Join(filepath.Dir(out), entry.Name()))
+		}
+	}
+	if _, err := os.Stat(filepath.Join(out, "_.._etc")); err != nil {
+		t.Errorf("subdiretório deveria ter sido criado sanitizado dentro da raiz: %v", err)
 	}
 }
 

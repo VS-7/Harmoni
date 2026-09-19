@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"harmoni/internal/core/domain/discovery"
 	"harmoni/internal/core/domain/ingest"
 	"harmoni/internal/core/domain/library"
 	"harmoni/internal/core/domain/playlist"
@@ -52,10 +53,90 @@ type RadioUseCase interface {
 	GenerateSongRadio(ctx context.Context, seedID library.TrackID, limit int, recentArtistIDs []library.ArtistID, recentTrackIDs []library.TrackID) ([]library.Track, error)
 }
 
+// JobView is a download job plus the progress derived from its items (RF8.2).
+type JobView struct {
+	Job      ingest.DownloadJob
+	Progress ingest.JobProgress
+}
+
+// Inspection answers "what is behind this link?" before anything is enqueued (RF6.2).
+type Inspection struct {
+	Provider SourceProvider
+	// Kind is the raw kind of the link, including the ambiguous track_in_playlist.
+	Kind         ingest.SourceKind
+	VideoID      string
+	PlaylistID   string
+	ChannelID    string
+	Title        string
+	Artist       string
+	ThumbnailURL string
+	// ItemCount is the playlist length, when the link points at one.
+	ItemCount int
+	// IsMix marks auto-generated playlists, which default to a single track.
+	IsMix bool
+	// Ambiguous tells the UI to ask "just this track" or "the whole playlist".
+	Ambiguous bool
+	InLibrary bool
+}
+
+// SourceProvider mirrors the domain provider so handlers do not import the domain twice.
+type SourceProvider = ingest.SourceProvider
+
 type IngestUseCase interface {
 	SubmitDownload(ctx context.Context, sourceURL string, mode ingest.DownloadMode) (*ingest.DownloadJob, error)
+	SubmitFromSource(ctx context.Context, provider, kind, sourceID string) (*ingest.DownloadJob, error)
+	SubmitBatch(ctx context.Context, sources []SourceInput) ([]ingest.DownloadJob, error)
+	Inspect(ctx context.Context, sourceURL string) (*Inspection, error)
 	GetJobStatus(ctx context.Context, jobID string) (*ingest.DownloadJob, error)
-	ListJobs(ctx context.Context, limit int) ([]ingest.DownloadJob, error)
+	ListJobs(ctx context.Context, limit int) ([]JobView, error)
+	GetJobItems(ctx context.Context, jobID string) ([]ingest.JobItem, error)
+	// EnsureJobItems expands a job into one item per video, returning the items already
+	// stored when the expansion happened at submit time (RF8.2).
+	EnsureJobItems(ctx context.Context, job *ingest.DownloadJob) ([]ingest.JobItem, error)
+	CancelJob(ctx context.Context, jobID string) error
+	RetryJob(ctx context.Context, jobID string) (*ingest.DownloadJob, error)
+	DeleteJob(ctx context.Context, jobID string) error
+}
+
+// SourceInput is one entry of a batch download request (RF8.1).
+type SourceInput struct {
+	Provider string
+	Kind     string
+	ID       string
+}
+
+// Job event types streamed to the downloads screen over SSE (RF8.5).
+const (
+	JobEventUpdated = "job_updated"
+	JobEventItem    = "item_updated"
+	JobEventDeleted = "job_deleted"
+)
+
+// JobEvent is a single change in the download queue.
+type JobEvent struct {
+	Type     string              `json:"type"`
+	JobID    string              `json:"job_id"`
+	Job      *ingest.DownloadJob `json:"job,omitempty"`
+	Item     *ingest.JobItem     `json:"item,omitempty"`
+	Progress ingest.JobProgress  `json:"progress"`
+}
+
+// JobEventPublisher is written to by the use case and the worker.
+type JobEventPublisher interface {
+	PublishJobEvent(ctx context.Context, event JobEvent)
+}
+
+// JobEventSubscriber is read by the SSE handler. Unsubscribe must always be called.
+type JobEventSubscriber interface {
+	SubscribeJobEvents() (events <-chan JobEvent, unsubscribe func())
+}
+
+// DiscoveryUseCase browses the remote catalog (Module 7).
+type DiscoveryUseCase interface {
+	Search(ctx context.Context, rawQuery, rawKind string, limit int) ([]discovery.RemoteItem, error)
+	GetTrack(ctx context.Context, videoID string) (*discovery.RemoteItem, error)
+	GetPlaylist(ctx context.Context, playlistID string) (*discovery.RemotePlaylist, error)
+	GetArtist(ctx context.Context, channelID string) (*discovery.RemoteArtist, error)
 }
 
 type SubsonicUseCase interface {
@@ -76,4 +157,3 @@ type PlaylistUseCase interface {
 	RemoveTrackFromPlaylist(ctx context.Context, playlistID playlist.PlaylistID, trackID library.TrackID) error
 	CreateSmartPlaylist(ctx context.Context, seedTrackID library.TrackID, name string, limit int) (*playlist.Playlist, error)
 }
-

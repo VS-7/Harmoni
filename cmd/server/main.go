@@ -70,6 +70,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Remote catalog adapter: metadata only, no download and no ffmpeg (Module 7).
+	remoteCatalog := ytdlp.NewSearcher()
+
 	var (
 		artistRepo      *postgres.ArtistRepository
 		albumRepo       *postgres.AlbumRepository
@@ -77,6 +80,7 @@ func main() {
 		radioRepo       *postgres.RadioRepository
 		playlistRepo    *postgres.PlaylistRepository
 		downloadJobRepo *postgres.DownloadJobRepository
+		jobItemRepo     *postgres.DownloadJobItemRepository
 	)
 
 	if pool != nil {
@@ -86,21 +90,24 @@ func main() {
 		radioRepo = postgres.NewRadioRepository(pool)
 		playlistRepo = postgres.NewPlaylistRepository(pool)
 		downloadJobRepo = postgres.NewDownloadJobRepository(pool)
+		jobItemRepo = postgres.NewDownloadJobItemRepository(pool)
 	}
 
-	// 6. Queue Channel (Buffer: 100)
+	// 6. Queue Channel (Buffer: 100) and the download queue event bus (RF8.5)
 	jobQueue := make(chan string, 100)
+	jobEvents := usecase.NewJobEventBroker()
 
 	// 7. Use Cases
 	var (
-		trackUC    *usecase.TrackService
-		albumUC    *usecase.AlbumService
-		artistUC   *usecase.ArtistService
-		scanUC     *usecase.LibraryScanService
-		radioUC    *usecase.RadioService
-		playlistUC *usecase.PlaylistService
-		ingestUC   *usecase.IngestService
-		subsonicUC *usecase.SubsonicService
+		trackUC     *usecase.TrackService
+		albumUC     *usecase.AlbumService
+		artistUC    *usecase.ArtistService
+		scanUC      *usecase.LibraryScanService
+		radioUC     *usecase.RadioService
+		playlistUC  *usecase.PlaylistService
+		ingestUC    *usecase.IngestService
+		subsonicUC  *usecase.SubsonicService
+		discoveryUC *usecase.DiscoveryService
 	)
 
 	if pool != nil {
@@ -110,11 +117,15 @@ func main() {
 		scanUC = usecase.NewLibraryScanService(cfg.MusicDir, trackRepo, albumRepo, artistRepo, tagExtractor, audioStorage, embedder)
 		radioUC = usecase.NewRadioService(trackRepo, radioRepo, embedder)
 		playlistUC = usecase.NewPlaylistService(playlistRepo, trackRepo, radioUC)
-		ingestUC = usecase.NewIngestService(downloadJobRepo, jobQueue)
+		discoveryUC = usecase.NewDiscoveryService(remoteCatalog, remoteCatalog, remoteCatalog, remoteCatalog, trackRepo)
+		ingestUC = usecase.NewIngestService(downloadJobRepo, jobItemRepo, discoveryUC, jobEvents, jobQueue)
 		subsonicUC = usecase.NewSubsonicService("admin", "admin", artistRepo, albumRepo, trackRepo, radioUC)
 
 		// 8. Ingest Worker (Single-worker throttled queue)
-		downloadWorker := worker.NewDownloadWorker(downloadJobRepo, jobQueue, downloader, scanUC, playlistUC, trackRepo, cfg.MusicDir)
+		downloadWorker := worker.NewDownloadWorker(
+			downloadJobRepo, jobItemRepo, ingestUC, jobEvents, jobQueue,
+			downloader, scanUC, playlistUC, trackRepo, cfg.MusicDir,
+		)
 		downloadWorker.Start(rootCtx)
 		defer downloadWorker.Stop()
 
@@ -138,6 +149,14 @@ func main() {
 		PlaylistUC: playlistUC,
 		IngestUC:   ingestUC,
 		SubsonicUC: subsonicUC,
+
+		JobEvents: jobEvents,
+	}
+
+	// Assigning a nil *DiscoveryService to the interface would produce a non-nil
+	// interface holding a nil pointer, which the handler cannot detect.
+	if discoveryUC != nil {
+		serverCfg.DiscoveryUC = discoveryUC
 	}
 
 	srv := httpAdapter.NewServer(cfg.Port, serverCfg)

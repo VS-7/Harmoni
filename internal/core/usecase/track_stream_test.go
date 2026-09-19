@@ -67,6 +67,19 @@ func (m *mockTrackReader) ListByArtistID(ctx context.Context, artistID library.A
 	return list, nil
 }
 
+// FindTrackIDsBySource backs the "already in library" flag of remote search (RF7.1).
+func (m *mockTrackReader) FindTrackIDsBySource(ctx context.Context, provider string, sourceIDs []string) (map[string]library.TrackID, error) {
+	found := make(map[string]library.TrackID)
+	for _, id := range sourceIDs {
+		for _, tr := range m.tracks {
+			if tr.SourceProvider == provider && tr.SourceID == id {
+				found[id] = tr.ID
+			}
+		}
+	}
+	return found, nil
+}
+
 type mockAudioStorage struct{}
 
 func (m *mockAudioStorage) OpenAudio(filePath string) (io.ReadSeekCloser, int64, error) {

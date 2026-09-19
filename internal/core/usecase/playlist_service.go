@@ -153,5 +153,3 @@ func (s *PlaylistService) CreateSmartPlaylist(ctx context.Context, seedTrackID l
 	slog.InfoContext(ctx, "playlist inteligente criada com sucesso", "id", fullPl.ID, "nome", fullPl.Name, "faixas", fullPl.TrackCount)
 	return fullPl, nil
 }
-
-

@@ -232,3 +232,44 @@ func ParseDownloadURL(canonicalURL string) (SourceRef, error) {
 	}
 	return ref.ResolveDownload(ModeDefault)
 }
+
+// NewSourceRef builds a reference from the structured payload the discovery UI sends
+// (RF8.1), validating provider, kind and id without ever parsing a user URL.
+func NewSourceRef(provider, kind, id string) (SourceRef, error) {
+	if SourceProvider(strings.ToLower(strings.TrimSpace(provider))) != ProviderYouTube {
+		return SourceRef{}, ErrInvalidProvider
+	}
+
+	cleanID := strings.TrimSpace(id)
+	switch SourceKind(strings.ToLower(strings.TrimSpace(kind))) {
+	case KindTrack:
+		if !videoIDPattern.MatchString(cleanID) {
+			return SourceRef{}, ErrInvalidSourceID
+		}
+		return SourceRef{Provider: ProviderYouTube, Kind: KindTrack, VideoID: cleanID}, nil
+	case KindPlaylist:
+		if !playlistIDPattern.MatchString(cleanID) {
+			return SourceRef{}, ErrInvalidSourceID
+		}
+		return SourceRef{Provider: ProviderYouTube, Kind: KindPlaylist, PlaylistID: cleanID}, nil
+	default:
+		return SourceRef{}, ErrInvalidSourceKind
+	}
+}
+
+// filenameSourceIDPattern matches the "[<id>]" suffix produced by the yt-dlp output template.
+var filenameSourceIDPattern = regexp.MustCompile(`\[([A-Za-z0-9_-]{11})\](?:\.[A-Za-z0-9]+)?$`)
+
+// SourceIDFromFilename recovers the YouTube video id already embedded in downloaded
+// filenames, which backfills tracks.source_id during a library scan.
+func SourceIDFromFilename(path string) string {
+	base := path
+	if idx := strings.LastIndexAny(base, `/\`); idx >= 0 {
+		base = base[idx+1:]
+	}
+	match := filenameSourceIDPattern.FindStringSubmatch(base)
+	if match == nil {
+		return ""
+	}
+	return match[1]
+}

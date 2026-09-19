@@ -106,6 +106,9 @@ func (m *mockTrackRepo) ListByAlbumID(ctx context.Context, albumID library.Album
 func (m *mockTrackRepo) ListByArtistID(ctx context.Context, artistID library.ArtistID) ([]library.Track, error) {
 	return nil, nil
 }
+func (m *mockTrackRepo) FindTrackIDsBySource(ctx context.Context, provider string, sourceIDs []string) (map[string]library.TrackID, error) {
+	return map[string]library.TrackID{}, nil
+}
 func (m *mockTrackRepo) Save(ctx context.Context, t *library.Track) error   { return nil }
 func (m *mockTrackRepo) Update(ctx context.Context, t *library.Track) error { return nil }
 func (m *mockTrackRepo) Delete(ctx context.Context, id library.TrackID) error {

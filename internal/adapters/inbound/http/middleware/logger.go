@@ -23,6 +23,20 @@ func (rw *responseWriterWrapper) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// Flush forwards to the real writer so Server-Sent Events reach the browser as they
+// happen (RF8.5); without it the wrapper would hide http.Flusher from the handler.
+func (rw *responseWriterWrapper) Flush() {
+	if flusher, ok := rw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// Unwrap exposes the underlying writer to http.ResponseController, which is how the
+// standard library reaches optional interfaces through a wrapper.
+func (rw *responseWriterWrapper) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
+}
+
 func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

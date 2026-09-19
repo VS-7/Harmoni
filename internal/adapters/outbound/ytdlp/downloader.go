@@ -18,6 +18,9 @@ import (
 
 type Downloader struct {
 	outputDir string
+	// archivePath records every id already downloaded, so a re-run of the same playlist
+	// does not fetch what is already on disk (RF6.3).
+	archivePath string
 }
 
 func NewDownloader(outputDir string) (*Downloader, error) {
@@ -28,37 +31,36 @@ func NewDownloader(outputDir string) (*Downloader, error) {
 	if err := os.MkdirAll(absOut, 0755); err != nil {
 		return nil, fmt.Errorf("falha ao criar pasta de downloads: %w", err)
 	}
-	return &Downloader{outputDir: absOut}, nil
+	return &Downloader{
+		outputDir:   absOut,
+		archivePath: filepath.Join(absOut, ".ytdlp-archive.txt"),
+	}, nil
 }
 
-// Download invokes yt-dlp throttled with nice -n 19, supporting single tracks or full playlists (Guardrails 4 & 5).
-// The exact files produced are read from yt-dlp itself instead of scanning the output directory.
-func (d *Downloader) Download(ctx context.Context, canonicalURL string, subDir string) (*ports.DownloadResult, error) {
-	ref, err := ingest.ParseDownloadURL(canonicalURL)
-	if err != nil {
-		return nil, fmt.Errorf("url insegura ou inválida para download: %w", err)
+// Download invokes yt-dlp throttled with nice -n 19 (Guardrails 4 & 5). The exact files
+// produced are read from yt-dlp itself (--print after_move:filepath) instead of scanning
+// the output directory, which is what used to attach the wrong file to a job (P3/RF6.3).
+func (d *Downloader) Download(ctx context.Context, req ports.DownloadRequest) (*ports.DownloadResult, error) {
+	ref := req.Ref
+	if ref.Provider != ingest.ProviderYouTube {
+		return nil, fmt.Errorf("provedor não suportado para download: %s", ref.Provider)
 	}
-	// Rebuild once more so only validated IDs reach the command line.
+	// Rebuild the URL from validated ids only: raw user input never reaches the command.
 	safeURL := ref.CanonicalURL()
 	isPlaylist := ref.Kind == ingest.KindPlaylist
 
 	targetDir := d.outputDir
-	if subDir != "" {
-		targetDir = filepath.Join(d.outputDir, filepath.Clean(subDir))
+	if req.SubDir != "" {
+		targetDir = filepath.Join(d.outputDir, filepath.Clean(sanitizeSegment(req.SubDir)))
 		if !isWithin(d.outputDir, targetDir) {
-			return nil, fmt.Errorf("subdiretório fora da pasta de downloads: %s", subDir)
+			return nil, fmt.Errorf("subdiretório fora da pasta de downloads: %s", req.SubDir)
 		}
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
 			return nil, fmt.Errorf("falha ao criar subdiretório de download: %w", err)
 		}
 	}
 
-	var outputTemplate string
-	if isPlaylist {
-		outputTemplate = filepath.Join(targetDir, "%(playlist_title,playlist)s", "%(playlist_index)02d - %(artist,creator,channel)s - %(title)s [%(id)s].%(ext)s")
-	} else {
-		outputTemplate = filepath.Join(targetDir, "%(artist,creator,channel)s - %(title)s [%(id)s].%(ext)s")
-	}
+	outputTemplate := d.outputTemplate(targetDir, ref, req.Position)
 
 	slog.InfoContext(ctx, "executando download via yt-dlp", "url", safeURL, "isPlaylist", isPlaylist, "targetDir", targetDir)
 
@@ -74,6 +76,8 @@ func (d *Downloader) Download(ctx context.Context, canonicalURL string, subDir s
 		"--embed-thumbnail",
 		"--no-progress",
 		"--no-simulate",
+		// Do not fetch again what is already in the library (RF6.3).
+		"--download-archive", d.archivePath,
 		// One final path per line on stdout, in download order.
 		"--print", "after_move:filepath",
 	}
@@ -113,11 +117,32 @@ func (d *Downloader) Download(ctx context.Context, canonicalURL string, subDir s
 	}
 
 	if len(result.Items) == 0 {
+		// Nothing was produced and nothing failed: the archive already had every entry.
+		if result.FailedItems == 0 && hasArchiveSkip(stdout.String()+stderr.String()) {
+			slog.InfoContext(ctx, "download ignorado: itens já constam no arquivo de histórico", "url", safeURL)
+			result.SkippedByArchive = true
+			return result, nil
+		}
 		return nil, fmt.Errorf("nenhum arquivo de áudio foi gerado pelo download")
 	}
 
 	slog.InfoContext(ctx, "download concluído com sucesso", "arquivos", len(result.Items), "falhas", result.FailedItems, "isPlaylist", isPlaylist)
 	return result, nil
+}
+
+// outputTemplate keeps playlist order on disk. When the worker downloads a playlist item
+// by item, yt-dlp has no playlist_index, so the position comes from the request.
+func (d *Downloader) outputTemplate(targetDir string, ref ingest.SourceRef, position int) string {
+	const nameTemplate = "%(artist,creator,channel)s - %(title)s [%(id)s].%(ext)s"
+
+	switch {
+	case ref.Kind == ingest.KindPlaylist:
+		return filepath.Join(targetDir, "%(playlist_title,playlist)s", "%(playlist_index)02d - "+nameTemplate)
+	case position > 0:
+		return filepath.Join(targetDir, fmt.Sprintf("%02d - ", position)+nameTemplate)
+	default:
+		return filepath.Join(targetDir, nameTemplate)
+	}
 }
 
 func (d *Downloader) collectItems(ctx context.Context, stdout string, targetDir string) []ports.DownloadedItem {
@@ -141,7 +166,10 @@ func (d *Downloader) collectItems(ctx context.Context, stdout string, targetDir 
 		}
 		seen[audioPath] = true
 
-		item := ports.DownloadedItem{AudioPath: audioPath}
+		item := ports.DownloadedItem{
+			AudioPath: audioPath,
+			SourceID:  ingest.SourceIDFromFilename(audioPath),
+		}
 		coverPath := strings.TrimSuffix(audioPath, filepath.Ext(audioPath)) + ".jpg"
 		if _, err := os.Stat(coverPath); err == nil {
 			item.CoverPath = coverPath
@@ -180,4 +208,30 @@ func lastErrorLine(stderr string) string {
 		return lines[len(lines)-1]
 	}
 	return "sem detalhes"
+}
+
+// archiveSkipMarkers are the messages yt-dlp prints when the archive already has the id.
+var archiveSkipMarkers = []string{"has already been recorded in the archive", "already been recorded"}
+
+func hasArchiveSkip(output string) bool {
+	for _, marker := range archiveSkipMarkers {
+		if strings.Contains(output, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// sanitizeSegment keeps a folder name to a single safe path segment (Guardrail 5).
+func sanitizeSegment(name string) string {
+	name = strings.ReplaceAll(name, "\\", "_")
+	name = strings.ReplaceAll(name, "/", "_")
+	name = strings.TrimSpace(strings.Trim(name, "."))
+	if name == "" {
+		return "downloads"
+	}
+	if len(name) > 120 {
+		name = name[:120]
+	}
+	return name
 }

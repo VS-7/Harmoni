@@ -28,8 +28,9 @@ Ao implementar qualquer código, o agente **DEVE** obedecer às seguintes regras
    Todo caso de uso e repositório deve ter sua interface definida em `internal/core/ports/`. Crie interfaces pequenas e específicas (`TrackReader`, `TrackWriter`), evitando interfaces inchadas ("God interfaces").
 3. **Zero Transcoding no Streaming:**  
    Nunca tente decodificar ou transcodificar faixas de áudio em tempo real na rota de stream. O arquivo original (`mp3`, `flac`, `m4a`, `opus`) é transmitido diretamente via `io.ReadSeekCloser` com `http.ServeContent`.
-4. **Downloads Throttled (Single-Worker):**  
-   Chamadas para ferramentas pesadas como `yt-dlp` e `ffmpeg` **NUNCA** devem ser disparadas livremente em goroutines avulsas. Devem ser sempre enfileiradas em um canal Go com buffer controlado e processadas por um único worker executando com `nice -n 19`.
+4. **Downloads e Conversões Throttled (Single-Worker):**  
+   Chamadas que **baixam ou convertem mídia** (`yt-dlp` com download, `ffmpeg`) **NUNCA** devem ser disparadas livremente em goroutines avulsas. Devem ser sempre enfileiradas em um canal Go com buffer controlado e processadas por um único worker executando com `nice -n 19`.
+   * **Exceção aprovada (Q1 do PRD v2):** consultas de **metadados** ao catálogo remoto (`yt-dlp --flat-playlist`, sem download e sem `ffmpeg`) não entram nessa fila. Elas rodam atrás de um semáforo próprio de capacidade 1 no `DiscoveryService`, com `nice -n 19`, timeout de 15 s e cache LRU, para que uma busca de 1–3 s não espere um download de 10 min.
 5. **Segurança de Arquivos e Execução de Processos:**  
    - Sempre utilize `filepath.Clean` e valide que o caminho final reside dentro do diretório raiz permitido de mídia para prevenir ataques de *Directory Traversal*.
    - Sanitizar estritamente strings e URLs externas enviadas a comandos de SO para evitar *Command Injection*.

@@ -28,6 +28,9 @@ type HandlersConfig struct {
 	PlaylistUC ports.PlaylistUseCase
 	IngestUC   ports.IngestUseCase
 	SubsonicUC ports.SubsonicUseCase
+	// DiscoveryUC and JobEvents power the search tab and the live download queue (v2).
+	DiscoveryUC ports.DiscoveryUseCase
+	JobEvents   ports.JobEventSubscriber
 }
 
 func NewServer(port string, cfg HandlersConfig) *Server {
@@ -41,7 +44,8 @@ func NewServer(port string, cfg HandlersConfig) *Server {
 	artistH := rest.NewArtistHandler(cfg.ArtistUC)
 	radioH := rest.NewRadioHandler(cfg.RadioUC)
 	playlistH := rest.NewPlaylistHandler(cfg.PlaylistUC)
-	downloadH := rest.NewDownloadHandler(cfg.IngestUC)
+	downloadH := rest.NewDownloadHandler(cfg.IngestUC, cfg.JobEvents)
+	discoverH := rest.NewDiscoverHandler(cfg.DiscoveryUC)
 	scanH := rest.NewScanHandler(cfg.ScanUC)
 
 	// Register REST routes (Go 1.26+ syntax)
@@ -64,8 +68,21 @@ func NewServer(port string, cfg HandlersConfig) *Server {
 	mux.HandleFunc("POST /api/v1/playlists/{id}/tracks", playlistH.AddTrack)
 	mux.HandleFunc("DELETE /api/v1/playlists/{id}/tracks/{trackId}", playlistH.RemoveTrack)
 	mux.HandleFunc("POST /api/v1/downloads", downloadH.SubmitDownload)
-	mux.HandleFunc("GET /api/v1/downloads/{id}", downloadH.GetStatus)
+	mux.HandleFunc("POST /api/v1/downloads/batch", downloadH.SubmitBatch)
+	mux.HandleFunc("POST /api/v1/downloads/inspect", downloadH.Inspect)
 	mux.HandleFunc("GET /api/v1/downloads", downloadH.ListJobs)
+	// Literal segments win over {id} in the Go 1.22+ mux, so /events is never read as an id.
+	mux.HandleFunc("GET /api/v1/downloads/events", downloadH.Events)
+	mux.HandleFunc("GET /api/v1/downloads/{id}", downloadH.GetStatus)
+	mux.HandleFunc("GET /api/v1/downloads/{id}/items", downloadH.ListItems)
+	mux.HandleFunc("POST /api/v1/downloads/{id}/cancel", downloadH.CancelJob)
+	mux.HandleFunc("POST /api/v1/downloads/{id}/retry", downloadH.RetryJob)
+	mux.HandleFunc("DELETE /api/v1/downloads/{id}", downloadH.DeleteJob)
+
+	// Remote catalog discovery (Module 7)
+	mux.HandleFunc("GET /api/v1/discover/search", discoverH.Search)
+	mux.HandleFunc("GET /api/v1/discover/playlists/{id}", discoverH.GetPlaylist)
+	mux.HandleFunc("GET /api/v1/discover/artists/{id}", discoverH.GetArtist)
 	mux.HandleFunc("POST /api/v1/library/scan", scanH.TriggerScan)
 
 	// Subsonic Handlers
