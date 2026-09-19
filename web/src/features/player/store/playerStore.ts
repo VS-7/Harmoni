@@ -30,6 +30,7 @@ interface PlayerStore {
   cycleRepeat: () => void;
   startRadio: (seedTrack: Track) => Promise<void>;
   addToQueue: (track: Track) => void;
+  playNext: (track: Track) => void;
   removeFromQueue: (index: number) => void;
   clearQueue: () => void;
   checkAutoContinuation: () => Promise<void>;
@@ -216,6 +217,14 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
 
     addToQueue(track: Track) {
       set({ queue: [...get().queue, track] });
+    },
+
+    // Insere logo após a faixa atual, sem interromper o que está tocando (RF11.2).
+    playNext(track: Track) {
+      const { queue, queueIndex } = get();
+      const next = [...queue];
+      next.splice(queueIndex + 1, 0, track);
+      set({ queue: next });
     },
 
     removeFromQueue(index: number) {

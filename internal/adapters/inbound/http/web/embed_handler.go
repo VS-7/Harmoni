@@ -37,6 +37,11 @@ func (h *EmbedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f, err := h.subFS.Open(path)
 	if err == nil {
 		_ = f.Close()
+		// Go não conhece .webmanifest; sem o tipo certo alguns navegadores ignoram o
+		// manifesto e o app deixa de ser instalável (RF10.5).
+		if strings.HasSuffix(path, ".webmanifest") {
+			w.Header().Set("Content-Type", "application/manifest+json")
+		}
 		h.fileServer.ServeHTTP(w, r)
 		return
 	}

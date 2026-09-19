@@ -1,8 +1,30 @@
 import { endpoints } from './endpoints.ts';
 import type { Track } from '../../domain/track.ts';
 import type { Album, Artist } from '../../domain/album.ts';
-import type { DownloadJob, DownloadMode } from '../../domain/download.ts';
+import type {
+  DownloadJob,
+  DownloadJobItem,
+  DownloadMode,
+  LinkInspection,
+  SourceRef,
+} from '../../domain/download.ts';
+import type { RemoteArtist, RemoteItem, RemotePlaylist, SearchType } from '../../domain/discovery.ts';
 import type { Playlist } from '../../domain/playlist.ts';
+
+/** postJson centralizes the error shape the API returns ({"error": "..."}). */
+async function postJson<T>(url: string, body: unknown, fallbackMessage: string): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errJson = await res.json().catch(() => ({ error: fallbackMessage }));
+    throw new Error(errJson.error || fallbackMessage);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
 
 export const apiClient = {
   async listTracks(offset = 0, limit = 50, query = ''): Promise<{ data: Track[]; total: number }> {
@@ -116,16 +138,27 @@ export const apiClient = {
   },
 
   async submitDownload(url: string, mode?: DownloadMode): Promise<DownloadJob> {
-    const res = await fetch(endpoints.downloads, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, mode }),
-    });
-    if (!res.ok) {
-      const errJson = await res.json().catch(() => ({ error: 'Erro no download' }));
-      throw new Error(errJson.error || 'Falha ao enfileirar download');
-    }
-    return res.json();
+    return postJson<DownloadJob>(endpoints.downloads, { url, mode }, 'Falha ao enfileirar download');
+  },
+
+  /** Enqueues an item picked in the search screen, with no URL parsing involved (RF8.1). */
+  async submitSource(source: SourceRef): Promise<DownloadJob> {
+    return postJson<DownloadJob>(endpoints.downloads, { source }, 'Falha ao enfileirar download');
+  },
+
+  /** Enqueues a multi-selection in one request (RF8.1). */
+  async submitBatch(items: SourceRef[]): Promise<DownloadJob[]> {
+    const json = await postJson<{ data: DownloadJob[] }>(
+      endpoints.downloadBatch,
+      { items },
+      'Falha ao enfileirar downloads',
+    );
+    return json.data || [];
+  },
+
+  /** Asks what is behind a pasted link before enqueuing anything (RF6.2). */
+  async inspectLink(url: string): Promise<LinkInspection> {
+    return postJson<LinkInspection>(endpoints.downloadInspect, { url }, 'Não foi possível analisar o link');
   },
 
   async listDownloads(limit = 20): Promise<DownloadJob[]> {
@@ -133,6 +166,51 @@ export const apiClient = {
     if (!res.ok) throw new Error('Falha ao buscar downloads');
     const json = await res.json();
     return json.data || [];
+  },
+
+  async listDownloadItems(jobId: string): Promise<DownloadJobItem[]> {
+    const res = await fetch(endpoints.downloadItems(jobId));
+    if (!res.ok) throw new Error('Falha ao buscar itens do download');
+    const json = await res.json();
+    return json.data || [];
+  },
+
+  async cancelDownload(jobId: string): Promise<void> {
+    const res = await fetch(endpoints.downloadCancel(jobId), { method: 'POST' });
+    if (!res.ok) throw new Error('Falha ao cancelar download');
+  },
+
+  async retryDownload(jobId: string): Promise<DownloadJob> {
+    return postJson<DownloadJob>(endpoints.downloadRetry(jobId), undefined, 'Falha ao reenviar download');
+  },
+
+  async deleteDownload(jobId: string): Promise<void> {
+    const res = await fetch(endpoints.downloadJob(jobId), { method: 'DELETE' });
+    if (!res.ok) throw new Error('Falha ao remover download do histórico');
+  },
+
+  /** Searches the remote catalog (RF7.1). */
+  async searchRemote(query: string, type: SearchType = 'all', limit = 20): Promise<RemoteItem[]> {
+    const params = new URLSearchParams({ q: query, type, limit: String(limit) });
+    const res = await fetch(`${endpoints.discoverSearch}?${params.toString()}`);
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({ error: 'Erro na busca' }));
+      throw new Error(errJson.error || 'Falha ao buscar no YouTube');
+    }
+    const json = await res.json();
+    return json.data || [];
+  },
+
+  async getRemotePlaylist(id: string): Promise<RemotePlaylist> {
+    const res = await fetch(endpoints.discoverPlaylist(id));
+    if (!res.ok) throw new Error('Falha ao carregar playlist remota');
+    return res.json();
+  },
+
+  async getRemoteArtist(id: string): Promise<RemoteArtist> {
+    const res = await fetch(endpoints.discoverArtist(id));
+    if (!res.ok) throw new Error('Falha ao carregar artista remoto');
+    return res.json();
   },
 
   async triggerScan(): Promise<void> {

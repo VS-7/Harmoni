@@ -1,221 +1,169 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Radio, HardDriveDownload, Check, Clock, Plus, Trash2, Music } from 'lucide-react';
+import React, { useCallback, useRef, useState } from 'react';
+import { MoreHorizontal, ArrowDownToLine, AudioLines } from 'lucide-react';
 import type { Track } from '../../../domain/track.ts';
-import { usePlayerStore } from '../../player/store/playerStore.ts';
+import { GlassButton } from '../../../shared/ui/glass/index.ts';
 import { formatDuration } from '../../../shared/utils/formatters.ts';
-import { offlineStorage } from '../../../adapters/storage/offline_store.ts';
-import { apiClient } from '../../../adapters/api/client.ts';
-import { AddToPlaylistModal } from './AddToPlaylistModal.tsx';
+import { usePlayerStore } from '../../player/store/playerStore.ts';
+import { useOfflineStore } from '../../offline/store/offlineStore.ts';
 
-interface Props {
+interface TrackListProps {
   tracks: Track[];
-  onRemoveFromPlaylist?: (trackId: string) => void;
-  playlistContext?: boolean;
+  /** Numeração por posição, usada em álbuns e playlists. */
+  numbered?: boolean;
+  emptyMessage?: string;
+  onOpenActions: (track: Track) => void;
 }
 
-export const TrackList: React.FC<Props> = ({ tracks, onRemoveFromPlaylist, playlistContext = false }) => {
-  const { currentTrack, status, playTrack, startRadio } = usePlayerStore();
-  const [offlineMap, setOfflineMap] = useState<Record<string, boolean>>({});
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [modalTrack, setModalTrack] = useState<Track | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+/** Tempo até o toque longo abrir o menu, como no iOS (RF11.1). */
+const LONG_PRESS_MS = 500;
 
-  useEffect(() => {
-    // Check offline status for tracks
-    async function checkOfflineStatus() {
-      const map: Record<string, boolean> = {};
-      for (const t of tracks) {
-        map[t.id] = await offlineStorage.isTrackOffline(t.id);
-      }
-      setOfflineMap(map);
-    }
-    checkOfflineStatus();
-  }, [tracks]);
+export const TrackList: React.FC<TrackListProps> = ({
+  tracks,
+  numbered = false,
+  emptyMessage = 'Nenhuma faixa por aqui',
+  onOpenActions,
+}) => {
+  const playTrack = usePlayerStore((s) => s.playTrack);
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
+  const status = usePlayerStore((s) => s.status);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
-  };
-
-  const handleDownloadOffline = async (e: React.MouseEvent, track: Track) => {
-    e.stopPropagation();
-    try {
-      setDownloadingId(track.id);
-      await offlineStorage.downloadTrackForOffline(track);
-      setOfflineMap((prev) => ({ ...prev, [track.id]: true }));
-      showToast('Faixa salva para reprodução offline!');
-    } catch (err) {
-      alert('Erro ao salvar música offline: ' + (err as Error).message);
-    } finally {
-      setDownloadingId(null);
-    }
-  };
-
-  const handleStartRadio = (e: React.MouseEvent, track: Track) => {
-    e.stopPropagation();
-    startRadio(track);
-  };
-
-  const handleOpenPlaylistModal = (e: React.MouseEvent, track: Track) => {
-    e.stopPropagation();
-    setModalTrack(track);
-  };
-
-  const handleRemove = (e: React.MouseEvent, trackId: string) => {
-    e.stopPropagation();
-    if (onRemoveFromPlaylist) {
-      onRemoveFromPlaylist(trackId);
-    }
-  };
+  if (tracks.length === 0) {
+    return (
+      <p className="py-12 text-center text-body text-[color:var(--fg-secondary)]">{emptyMessage}</p>
+    );
+  }
 
   return (
-    <div className="w-full relative">
-      {toastMessage && (
-        <div className="fixed top-6 right-6 z-50 bg-emerald-600 text-zinc-950 font-medium px-4 py-2.5 rounded-xl shadow-lg animate-in fade-in slide-in-from-top-4 duration-200 text-sm">
-          {toastMessage}
-        </div>
-      )}
-
-      {modalTrack && (
-        <AddToPlaylistModal
-          track={modalTrack}
-          onClose={() => setModalTrack(null)}
-          onSuccess={showToast}
+    <ul className="divide-y divide-[color:var(--separator)]">
+      {tracks.map((track, index) => (
+        <TrackRow
+          key={track.id}
+          track={track}
+          index={index}
+          numbered={numbered}
+          isCurrent={currentTrack?.id === track.id}
+          isPlaying={currentTrack?.id === track.id && status === 'playing'}
+          onPlay={() => void playTrack(track, tracks)}
+          onOpenActions={() => onOpenActions(track)}
         />
-      )}
+      ))}
+    </ul>
+  );
+};
 
-      <div className="grid grid-cols-12 gap-4 px-4 py-2 text-xs font-semibold text-zinc-400 border-b border-zinc-800">
-        <div className="col-span-1 text-center">#</div>
-        <div className="col-span-6 sm:col-span-5">Título</div>
-        <div className="hidden sm:block sm:col-span-3">Álbum</div>
-        <div className="col-span-5 sm:col-span-3 flex items-center justify-end gap-1">
-          <Clock size={14} />
-          <span>Duração</span>
-        </div>
-      </div>
+interface TrackRowProps {
+  track: Track;
+  index: number;
+  numbered: boolean;
+  isCurrent: boolean;
+  isPlaying: boolean;
+  onPlay: () => void;
+  onOpenActions: () => void;
+}
 
-      <div className="divide-y divide-zinc-800/40">
-        {tracks.map((track, idx) => {
-          const isCurrent = currentTrack?.id === track.id;
-          const isPlaying = isCurrent && status === 'playing';
-          const isOffline = offlineMap[track.id];
-          const isDownloading = downloadingId === track.id;
-          const coverUrl = apiClient.getCoverUrl(track.id);
+const TrackRow: React.FC<TrackRowProps> = ({
+  track,
+  index,
+  numbered,
+  isCurrent,
+  isPlaying,
+  onPlay,
+  onOpenActions,
+}) => {
+  const isOffline = useOfflineStore((s) => s.offlineIds.has(track.id));
+  const progress = useOfflineStore((s) => s.progress[track.id]);
 
-          return (
-            <div
-              key={track.id}
-              onClick={() => playTrack(track, tracks)}
-              className={`group grid grid-cols-12 gap-4 px-4 py-2.5 items-center rounded-lg cursor-pointer transition-colors ${
-                isCurrent ? 'bg-emerald-500/10' : 'hover:bg-zinc-800/50'
-              }`}
-            >
-              {/* Track number / Play icon */}
-              <div className="col-span-1 flex items-center justify-center text-zinc-500 group-hover:text-zinc-100">
-                {isPlaying ? (
-                  <span className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse" />
-                ) : (
-                  <>
-                    <span className="group-hover:hidden text-xs font-mono">{idx + 1}</span>
-                    <Play size={16} className="hidden group-hover:block text-emerald-400" />
-                  </>
-                )}
-              </div>
+  const timer = useRef<number | null>(null);
+  // Um toque longo abre o menu, então o toque que o segue não deve tocar a faixa.
+  const [suppressTap, setSuppressTap] = useState(false);
 
-              {/* Thumbnail + Title & Artist */}
-              <div className="col-span-6 sm:col-span-5 min-w-0 flex items-center gap-3">
-                <div className="relative w-10 h-10 rounded-md overflow-hidden bg-zinc-800 flex-shrink-0 flex items-center justify-center border border-zinc-800 shadow-sm">
-                  <img
-                    src={coverUrl}
-                    alt={track.title}
-                    loading="lazy"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
-                    className="w-full h-full object-cover"
-                  />
-                  <Music className="absolute text-zinc-600 w-4 h-4 pointer-events-none" />
-                </div>
+  const startPress = useCallback(() => {
+    setSuppressTap(false);
+    timer.current = window.setTimeout(() => {
+      setSuppressTap(true);
+      onOpenActions();
+    }, LONG_PRESS_MS);
+  }, [onOpenActions]);
 
-                <div className="min-w-0">
-                  <p
-                    className={`text-sm font-medium truncate ${
-                      isCurrent ? 'text-emerald-400 font-semibold' : 'text-zinc-100'
-                    }`}
-                  >
-                    {track.title}
-                  </p>
-                  <p className="text-xs text-zinc-400 truncate">{track.artist_name}</p>
-                </div>
-              </div>
+  const endPress = useCallback(() => {
+    if (timer.current !== null) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+  }, []);
 
-              {/* Album */}
-              <div className="hidden sm:block sm:col-span-3 min-w-0">
-                <p className="text-xs text-zinc-400 truncate">
-                  {track.album_title || '—'}
-                </p>
-              </div>
+  return (
+    <li className="list-row">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            if (suppressTap) {
+              setSuppressTap(false);
+              return;
+            }
+            onPlay();
+          }}
+          onPointerDown={startPress}
+          onPointerUp={endPress}
+          onPointerLeave={endPress}
+          onPointerCancel={endPress}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            onOpenActions();
+          }}
+          className="flex min-h-11 min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
+        >
+          {numbered && (
+            <span className="w-6 shrink-0 text-center text-footnote text-[color:var(--fg-tertiary)]">
+              {isCurrent ? <AudioLines size={14} className="mx-auto" /> : index + 1}
+            </span>
+          )}
 
-              {/* Actions & Duration */}
-              <div className="col-span-5 sm:col-span-3 flex items-center justify-end gap-2 sm:gap-3">
-                {/* Add to Playlist button */}
-                <button
-                  onClick={(e) => handleOpenPlaylistModal(e, track)}
-                  className="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded transition-all"
-                  title="Adicionar à Playlist / Criar Mix Inteligente"
-                >
-                  <Plus size={16} />
-                </button>
-
-                {/* Remove from Playlist (only if in playlist view) */}
-                {playlistContext && onRemoveFromPlaylist && (
-                  <button
-                    onClick={(e) => handleRemove(e, track.id)}
-                    className="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
-                    title="Remover desta playlist"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
-
-                {/* Radio button (RF3.2) */}
-                <button
-                  onClick={(e) => handleStartRadio(e, track)}
-                  className="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-400 hover:text-purple-400 hover:bg-purple-500/10 rounded transition-all"
-                  title="Iniciar rádio desta música"
-                >
-                  <Radio size={16} />
-                </button>
-
-                {/* Offline download button (RF5.2) */}
-                <button
-                  onClick={(e) => handleDownloadOffline(e, track)}
-                  disabled={isOffline || isDownloading}
-                  className={`p-1.5 rounded transition-all ${
-                    isOffline
-                      ? 'text-emerald-400 bg-emerald-500/10'
-                      : 'opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10'
-                  }`}
-                  title={isOffline ? 'Salva offline no dispositivo' : 'Baixar para reprodução offline'}
-                >
-                  {isOffline ? (
-                    <Check size={16} />
-                  ) : isDownloading ? (
-                    <span className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin inline-block" />
-                  ) : (
-                    <HardDriveDownload size={16} />
-                  )}
-                </button>
-
-                {/* Duration */}
-                <span className="text-xs text-zinc-400 font-mono w-10 text-right">
-                  {formatDuration(track.duration_sec)}
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1.5">
+              <span
+                className={`truncate text-body ${isCurrent ? 'font-semibold' : ''} ${
+                  isPlaying ? 'opacity-100' : ''
+                }`}
+              >
+                {track.title}
+              </span>
+              {/* Indicador monocromático de faixa no aparelho (RF11.3). */}
+              {isOffline && (
+                <ArrowDownToLine
+                  size={12}
+                  className="shrink-0 opacity-60"
+                  aria-label="Disponível no aparelho"
+                />
+              )}
+              {progress !== undefined && (
+                <span className="shrink-0 text-caption text-[color:var(--fg-tertiary)]">
+                  {Math.round(progress * 100)}%
                 </span>
-              </div>
-            </div>
-          );
-        })}
+              )}
+            </span>
+            <span className="block truncate text-footnote text-[color:var(--fg-secondary)]">
+              {track.artist_name}
+              {track.album_title ? ` — ${track.album_title}` : ''}
+            </span>
+          </span>
+
+          <span className="shrink-0 text-footnote tabular-nums text-[color:var(--fg-tertiary)]">
+            {formatDuration(track.duration_sec)}
+          </span>
+        </button>
+
+        {/* Sempre visível: não depende de hover (correção do P5, RF11.1). */}
+        <GlassButton
+          size="sm"
+          variant="light"
+          onClick={onOpenActions}
+          aria-label={`Ações de ${track.title}`}
+        >
+          <MoreHorizontal size={16} />
+        </GlassButton>
       </div>
-    </div>
+    </li>
   );
 };

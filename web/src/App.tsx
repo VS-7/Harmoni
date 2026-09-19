@@ -1,102 +1,99 @@
-import React, { useState, useEffect } from 'react';
-import { Waves, Library, DownloadCloud, Wifi, WifiOff } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { AppShell } from './app/shell/AppShell.tsx';
+import { useNavigation } from './app/navigation/useNavigation.ts';
 import { LibraryView } from './features/library/components/LibraryView.tsx';
+import { AlbumScreen } from './features/library/components/AlbumScreen.tsx';
+import { PlaylistScreen } from './features/library/components/PlaylistScreen.tsx';
+import { SearchView } from './features/discover/components/SearchView.tsx';
+import { RemotePlaylistScreen } from './features/discover/components/RemotePlaylistScreen.tsx';
+import { RemoteArtistScreen } from './features/discover/components/RemoteArtistScreen.tsx';
 import { DownloadsView } from './features/downloads/components/DownloadsView.tsx';
-import { BottomPlayer } from './features/player/components/BottomPlayer.tsx';
+import { OfflineView } from './features/offline/components/OfflineView.tsx';
+import { useOfflineStore } from './features/offline/store/offlineStore.ts';
+import type { TabKey } from './app/navigation/routes.ts';
+
+const TAB_TITLE: Record<TabKey, string> = {
+  library: 'Biblioteca',
+  search: 'Buscar',
+  downloads: 'Downloads',
+  offline: 'No Aparelho',
+};
 
 export const App: React.FC = () => {
-  const [activeView, setActiveView] = useState<'library' | 'downloads'>('library');
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const { route, activeTab, push, selectTab, back } = useNavigation();
+  const refreshOffline = useOfflineStore((s) => s.refresh);
 
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+    void refreshOffline();
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    // Register Service Worker for PWA (RF5.1)
     if ('serviceWorker' in navigator && import.meta.env.PROD) {
-      navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+      navigator.serviceWorker.register('/service-worker.js').catch(() => undefined);
     }
+  }, [refreshOffline]);
 
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
+  const isDetail = route.name !== 'tab';
+  const title = route.name === 'tab' ? TAB_TITLE[route.tab] : titleForDetail(route.name);
 
   return (
-    <div className="min-h-screen bg-[#0d0e12] text-zinc-100 flex flex-col pb-32">
-      {/* Top Header */}
-      <header className="sticky top-0 z-30 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/60 px-4 sm:px-8 py-3.5">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          {/* Logo */}
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-zinc-950">
-              <Waves size={22} className="stroke-[2.5]" />
-            </div>
-            <div>
-              <h1 className="font-bold text-lg tracking-tight bg-gradient-to-r from-zinc-100 to-zinc-400 bg-clip-text text-transparent">
-                Harmoni
-              </h1>
-              <span className="text-[10px] text-zinc-500 font-mono block -mt-1">
-                Audio Stream Engine
-              </span>
-            </div>
-          </div>
+    <AppShell
+      title={title}
+      activeTab={activeTab}
+      onSelectTab={selectTab}
+      onBack={isDetail ? back : undefined}
+    >
+      {route.name === 'tab' && route.tab === 'library' && (
+        <LibraryView
+          onOpenAlbum={(id) => push({ name: 'album', id })}
+          onOpenPlaylist={(id) => push({ name: 'playlist', id })}
+        />
+      )}
 
-          {/* Navigation & Status */}
-          <div className="flex items-center gap-3">
-            <nav className="flex items-center gap-1 bg-zinc-900/80 p-1 rounded-xl border border-zinc-800/60">
-              <button
-                onClick={() => setActiveView('library')}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  activeView === 'library'
-                    ? 'bg-zinc-800 text-emerald-400 shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <Library size={15} />
-                Biblioteca
-              </button>
+      {route.name === 'tab' && route.tab === 'search' && (
+        <SearchView
+          onOpenRemotePlaylist={(id) => push({ name: 'remote-playlist', id })}
+          onOpenRemoteArtist={(id) => push({ name: 'remote-artist', id })}
+        />
+      )}
 
-              <button
-                onClick={() => setActiveView('downloads')}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  activeView === 'downloads'
-                    ? 'bg-zinc-800 text-emerald-400 shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <DownloadCloud size={15} />
-                Downloads
-              </button>
-            </nav>
+      {route.name === 'tab' && route.tab === 'downloads' && <DownloadsView />}
+      {route.name === 'tab' && route.tab === 'offline' && <OfflineView />}
 
-            {/* Online/Offline connectivity indicator */}
-            <div
-              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border ${
-                isOnline
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                  : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-              }`}
-              title={isOnline ? 'Conectado ao servidor' : 'Modo Offline (IndexedDB Ativo)'}
-            >
-              {isOnline ? <Wifi size={12} /> : <WifiOff size={12} />}
-              {isOnline ? 'Online' : 'Offline'}
-            </div>
-          </div>
-        </div>
-      </header>
+      {route.name === 'album' && <AlbumScreen albumId={route.id} />}
 
-      {/* Main Content View */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 py-6">
-        {activeView === 'library' ? <LibraryView /> : <DownloadsView />}
-      </main>
+      {route.name === 'playlist' && (
+        <PlaylistScreen
+          playlistId={route.id}
+          onDeleted={back}
+          onOpenAlbum={(id) => push({ name: 'album', id })}
+        />
+      )}
 
-      {/* Persistent Global Player (RF5.5) */}
-      <BottomPlayer />
-    </div>
+      {route.name === 'remote-playlist' && (
+        <RemotePlaylistScreen
+          playlistId={route.id}
+          onOpenRemoteArtist={(id) => push({ name: 'remote-artist', id })}
+        />
+      )}
+
+      {route.name === 'remote-artist' && (
+        <RemoteArtistScreen
+          channelId={route.id}
+          onOpenRemotePlaylist={(id) => push({ name: 'remote-playlist', id })}
+        />
+      )}
+    </AppShell>
   );
 };
+
+function titleForDetail(name: string): string {
+  switch (name) {
+    case 'album':
+      return 'Álbum';
+    case 'playlist':
+      return 'Playlist';
+    case 'remote-playlist':
+      return 'Playlist do YouTube';
+    default:
+      return 'Artista';
+  }
+}

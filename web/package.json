@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
+    "build": "tsc && vite build && npm run build:sw",
+    "preview": "vite preview",
+    "build:sw": "esbuild src/sw/service-worker.ts --bundle --format=iife --target=es2020 --minify --outfile=dist/service-worker.js"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

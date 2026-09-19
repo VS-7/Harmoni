@@ -1,57 +1,68 @@
-const CACHE_NAME = 'harmoni-static-v1';
+/// <reference lib="webworker" />
+// Service worker do PWA (RF5.1). Compilado por `npm run build:sw` para dist/service-worker.js,
+// na raiz do escopo, porque um SW só controla o diretório onde é servido.
+declare const self: ServiceWorkerGlobalScope;
 
-const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-];
+const CACHE_NAME = 'harmoni-static-v2';
 
-self.addEventListener('install', (event: any) => {
+/** O shell mínimo para abrir o app offline. */
+const STATIC_ASSETS = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png'];
+
+self.addEventListener('install', (event: ExtendableEvent) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    })
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)),
   );
-  (self as any).skipWaiting();
+  void self.skipWaiting();
 });
 
-self.addEventListener('activate', (event: any) => {
+self.addEventListener('activate', (event: ExtendableEvent) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
-          }
-        })
-      );
-    })
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then(() => self.clients.claim()),
   );
-  (self as any).clients.claim();
 });
 
-self.addEventListener('fetch', (event: any) => {
-  const url = new URL(event.request.url);
+self.addEventListener('fetch', (event: FetchEvent) => {
+  const request = event.request;
+  if (request.method !== 'GET') return;
 
-  // Audio streams and API mutations are handled outside the static cache
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/rest/')) {
+  const url = new URL(request.url);
+  // A API e o streaming de áudio nunca passam pelo cache estático: o áudio offline
+  // vive no IndexedDB (Guardrail 6) e as respostas da API precisam ser atuais.
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/rest/')) {
     return;
   }
 
+  // Navegação: rede primeiro, para que um deploy novo apareça sem limpar cache.
+  // O SPA usa rotas reais (/album/:id), então o fallback é sempre o index.
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const copy = response.clone();
+          void caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
+          return response;
+        })
+        .catch(async () => (await caches.match('/index.html')) ?? Response.error()),
+    );
+    return;
+  }
+
+  // Assets: cache primeiro, já que o Vite versiona o nome de cada arquivo.
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request).then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-          const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
+    caches.match(request).then((cached) => {
+      if (cached) return cached;
+      return fetch(request).then((response) => {
+        if (response.status === 200 && response.type === 'basic') {
+          const copy = response.clone();
+          void caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
         }
-        return networkResponse;
+        return response;
       });
-    })
+    }),
   );
 });
+
+export {};
