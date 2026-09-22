@@ -16,3 +16,9 @@ export function useMediaQuery(query: string): boolean {
 }
 
 export const useIsDesktop = () => useMediaQuery('(min-width: 1024px)');
+
+/** Abaixo de 768px o layout vira o do app móvel: sem sidebar, com barra de navegação inferior. */
+export const useIsMobile = () => useMediaQuery('(max-width: 767px)');
+
+/** Dispositivo com mouse: só nele os controles podem depender de hover. */
+export const useCanHover = () => useMediaQuery('(hover: hover) and (pointer: fine)');

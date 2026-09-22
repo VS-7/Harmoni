@@ -14,3 +14,23 @@ export interface PlayerState {
   repeat: RepeatMode;
   isOfflineMode: boolean;
 }
+
+/** De onde a fila atual veio: é o que acende a playlist/álbum na biblioteca. */
+export type PlaybackContextType =
+  | 'playlist'
+  | 'album'
+  | 'artist'
+  | 'station'
+  | 'offline'
+  | 'search'
+  | 'queue';
+
+export interface PlaybackContext {
+  type: PlaybackContextType;
+  id: string;
+  name: string;
+}
+
+export function contextKey(context: Pick<PlaybackContext, 'type' | 'id'> | null | undefined): string | null {
+  return context ? `${context.type}:${context.id}` : null;
+}

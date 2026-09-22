@@ -1,75 +1,75 @@
 @import "tailwindcss";
 
 /* ============================================================================
-   Harmoni Design System — Liquid Glass (PRD v2, Módulo 9)
-   Tokens neutros: nenhum botão usa cor sólida ou gradiente (RF9.2).
+   Harmoni — design system no estilo Spotify (tema escuro único).
+   Os estilos do Liquid Glass ficaram em shared/ui/glass/liquid-glass.css.
    ========================================================================== */
+
+@theme {
+  --font-sans: "Figtree Variable", "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+  --color-sp-black: #000000;
+  --color-sp-base: #121212;
+  --color-sp-elevated: #1f1f1f;
+  --color-sp-highlight: #2a2a2a;
+  --color-sp-card: #181818;
+  --color-sp-menu: #282828;
+  --color-sp-menu-hover: #3e3e3e;
+  --color-sp-input: #3e3e3e;
+  --color-sp-text: #ffffff;
+  --color-sp-subdued: #b3b3b3;
+  --color-sp-muted: #7c7c7c;
+  --color-sp-green: #1ed760;
+  --color-sp-green-hover: #3be477;
+  --color-sp-green-press: #169c46;
+  --color-sp-announce: #2e77d0;
+  --color-sp-negative: #f3727f;
+
+  --ease-sp: cubic-bezier(0.3, 0, 0.4, 1);
+
+  --animate-sp-fade: sp-fade 160ms ease-out;
+  --animate-sp-pop: sp-pop 160ms var(--ease-sp);
+  --animate-sp-up: sp-up 260ms var(--ease-sp);
+
+  @keyframes sp-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes sp-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes sp-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+}
 
 @layer base {
   :root {
-    color-scheme: dark light;
-
-    /* Superfícies e texto (RF9.3) */
-    --bg: #07070a;
-    --bg-elevated: #121216;
-    --fg: #f5f5f7;
-    --fg-secondary: rgba(235, 235, 245, 0.62);
-    --fg-tertiary: rgba(235, 235, 245, 0.32);
-    --separator: rgba(255, 255, 255, 0.1);
-    --separator-strong: rgba(255, 255, 255, 0.18);
-
-    /* Vidro */
-    --glass-fallback: rgba(30, 30, 32, 0.85);
-    --glass-scrim: rgba(255, 255, 255, 0.06);
-    --glass-scrim-active: rgba(255, 255, 255, 0.14);
-
-    /* Chrome do app: altura reservada para tab bar + mini player (RF10.2) */
+    color-scheme: dark;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --tab-bar-height: 64px;
-    --mini-player-height: 64px;
-    --chrome-bottom: calc(
-      var(--tab-bar-height) + var(--mini-player-height) + var(--safe-bottom) + 24px
-    );
-
-    --header-height: 52px;
-    --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
-  }
-
-  /* No desktop a tab bar vira sidebar, então some da reserva da base (RF10.1). */
-  @media (min-width: 1024px) {
-    :root {
-      --chrome-bottom: calc(var(--mini-player-height) + var(--safe-bottom) + 24px);
-    }
-  }
-
-  /* Tema claro segue o sistema (RF9.3, Q4); data-theme permite forçar. */
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme="dark"]) {
-      --bg: #f2f2f7;
-      --bg-elevated: #ffffff;
-      --fg: #1c1c1e;
-      --fg-secondary: rgba(60, 60, 67, 0.62);
-      --fg-tertiary: rgba(60, 60, 67, 0.32);
-      --separator: rgba(0, 0, 0, 0.1);
-      --separator-strong: rgba(0, 0, 0, 0.16);
-      --glass-fallback: rgba(250, 250, 252, 0.85);
-      --glass-scrim: rgba(255, 255, 255, 0.5);
-      --glass-scrim-active: rgba(255, 255, 255, 0.72);
-    }
-  }
-
-  :root[data-theme="light"] {
-    --bg: #f2f2f7;
-    --bg-elevated: #ffffff;
-    --fg: #1c1c1e;
-    --fg-secondary: rgba(60, 60, 67, 0.62);
-    --fg-tertiary: rgba(60, 60, 67, 0.32);
-    --separator: rgba(0, 0, 0, 0.1);
-    --separator-strong: rgba(0, 0, 0, 0.16);
-    --glass-fallback: rgba(250, 250, 252, 0.85);
-    --glass-scrim: rgba(255, 255, 255, 0.5);
-    --glass-scrim-active: rgba(255, 255, 255, 0.72);
+    --topbar-h: 64px;
+    --player-h: 72px;
+    --mobile-nav-h: 60px;
+    --mobile-player-h: 56px;
   }
 
   html,
@@ -80,317 +80,165 @@
 
   body {
     margin: 0;
-    background-color: var(--bg);
-    color: var(--fg);
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
-      system-ui, "Segoe UI", Roboto, sans-serif;
+    background: var(--color-sp-black);
+    color: var(--color-sp-text);
+    font-family: var(--font-sans);
     font-synthesis-weight: none;
-    text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     overflow: hidden;
-    /* O elástico da página inteira atrapalha as sheets; a rolagem vive no main. */
     overscroll-behavior: none;
-  }
-
-  button {
-    font: inherit;
-    color: inherit;
     -webkit-tap-highlight-color: transparent;
   }
-}
 
-/* ============================================================================
-   Tipografia (RF9.3)
-   ========================================================================== */
+  button:not(:disabled),
+  [role="button"],
+  a[href] {
+    cursor: pointer;
+  }
 
-.text-large-title {
-  font-size: 34px;
-  line-height: 41px;
-  font-weight: 700;
-  letter-spacing: 0.37px;
-}
+  input::placeholder {
+    color: var(--color-sp-muted);
+  }
 
-.text-title {
-  font-size: 22px;
-  line-height: 28px;
-  font-weight: 700;
-  letter-spacing: 0.35px;
-}
+  input[type="search"]::-webkit-search-cancel-button {
+    display: none;
+  }
 
-.text-headline {
-  font-size: 17px;
-  line-height: 22px;
-  font-weight: 600;
-  letter-spacing: -0.41px;
-}
-
-.text-body {
-  font-size: 15px;
-  line-height: 20px;
-  letter-spacing: -0.24px;
-}
-
-.text-footnote {
-  font-size: 13px;
-  line-height: 18px;
-  letter-spacing: -0.08px;
-}
-
-.text-caption {
-  font-size: 11px;
-  line-height: 13px;
-  letter-spacing: 0.06px;
-}
-
-/* Sombra sutil garante o contraste AA de texto sobre vidro (RF9.5). */
-.text-on-glass {
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-}
-
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) .text-on-glass {
-    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.4);
+  :focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+    border-radius: 2px;
   }
 }
 
 /* ============================================================================
-   Liquid Glass — Apêndice A do PRD v2
-   Cada backdrop-filter e mask é duplicado com -webkit- (iOS < 18).
+   Rolagem: barras discretas que só aparecem com o ponteiro sobre a área.
    ========================================================================== */
 
-.GlassContainer {
-  --corner-radius: 24px;
-  --base-strength: 14px;
-  --extra-blur: 2px;
-  --softness: 12px;
-  --tint-amount: 0;
-  --tint-saturation: 2;
-  --tint-hue: 180deg;
-  --contrast: 1;
-  --brightness: 1;
-  --invert: 10%;
+@utility sp-scroll {
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 
-  --total-strength: calc(var(--base-strength) + var(--extra-blur));
-  --edge-width: calc(0.3px + (var(--softness) * 0.1));
-  --emboss-width: calc(var(--softness) * 0.38);
-  --refraction-width: calc(var(--softness) * 0.3);
-
-  position: relative;
-  overflow: visible;
-  pointer-events: none;
-}
-
-.GlassContent {
-  position: relative;
-  display: block;
-  z-index: 100;
-  overflow: hidden;
-  border-radius: var(--corner-radius);
-  pointer-events: auto;
-}
-
-.GlassMaterial {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  overflow: visible;
-  pointer-events: none;
-}
-
-.GlassMaterial:after {
-  content: "";
-  display: block;
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  overflow: hidden;
-  border-radius: var(--corner-radius);
-  background-color: rgba(128, 128, 128, 0);
-}
-
-.GlassMaterial > div {
-  position: absolute;
-  inset: 0;
-  box-sizing: border-box;
-  border-radius: var(--corner-radius);
-  z-index: 2;
-  overflow: hidden;
-}
-
-.GlassMaterial .GlassEdgeReflection {
-  z-index: 4;
-  margin: calc(var(--total-strength) * -1);
-  border-radius: calc(var(--corner-radius) + var(--total-strength));
-  -webkit-backdrop-filter: blur(var(--total-strength)) brightness(1.2) saturate(1.2);
-  backdrop-filter: blur(var(--total-strength)) brightness(1.2) saturate(1.2);
-  padding: var(--edge-width);
-  border: var(--total-strength) solid transparent;
-  -webkit-mask:
-    linear-gradient(white 0 0) padding-box,
-    linear-gradient(white 0 0) content-box;
-  mask:
-    linear-gradient(white 0 0) padding-box,
-    linear-gradient(white 0 0) content-box;
-  -webkit-mask-composite: xor;
-  mask-composite: exclude, exclude;
-}
-
-.GlassMaterial .GlassEmbossReflection {
-  -webkit-backdrop-filter: blur(calc(var(--total-strength) * 1.5)) invert(0.25) brightness(1.11)
-    saturate(1.2) hue-rotate(-10deg) contrast(2.3);
-  backdrop-filter: blur(calc(var(--total-strength) * 1.5)) invert(0.25) brightness(1.11)
-    saturate(1.2) hue-rotate(-10deg) contrast(2.3);
-  padding: var(--emboss-width);
-  border: 0 solid transparent;
-  -webkit-mask:
-    linear-gradient(white 0 0) padding-box,
-    linear-gradient(white 0 0) content-box;
-  mask:
-    linear-gradient(white 0 0) padding-box,
-    linear-gradient(white 0 0) content-box;
-  -webkit-mask-composite: xor;
-  mask-composite: exclude, exclude;
-}
-
-.GlassMaterial .GlassRefraction {
-  -webkit-backdrop-filter: invert(0.1) brightness(1.2) contrast(1.5);
-  backdrop-filter: invert(0.1) brightness(1.2) contrast(1.5);
-  padding: var(--refraction-width);
-  border: 0 solid transparent;
-  -webkit-mask:
-    linear-gradient(white 0 0) padding-box,
-    linear-gradient(white 0 0) content-box;
-  mask:
-    linear-gradient(white 0 0) padding-box,
-    linear-gradient(white 0 0) content-box;
-  -webkit-mask-composite: xor;
-  mask-composite: exclude, exclude;
-}
-
-.GlassMaterial .GlassBlur {
-  -webkit-backdrop-filter: blur(var(--extra-blur)) brightness(1.25);
-  backdrop-filter: blur(var(--extra-blur)) brightness(1.25);
-  border-radius: calc(var(--corner-radius) - (var(--emboss-width) + var(--refraction-width)));
-  margin: calc(var(--emboss-width) + var(--refraction-width));
-}
-
-.GlassMaterial .BlendLayers {
-  z-index: 3;
-  -webkit-backdrop-filter: blur(calc((var(--softness) * 0.2) + (var(--extra-blur) * 0.2)));
-  backdrop-filter: blur(calc((var(--softness) * 0.2) + (var(--extra-blur) * 0.2)));
-}
-
-.GlassMaterial .BlendEdge {
-  z-index: 8;
-  -webkit-backdrop-filter: blur(calc(var(--edge-width) * 0.4)) contrast(1.6) saturate(1.5);
-  backdrop-filter: blur(calc(var(--edge-width) * 0.4)) contrast(1.6) saturate(1.5);
-}
-
-.GlassContainer:before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  display: block;
-  border-radius: var(--corner-radius);
-  pointer-events: none;
-  -webkit-backdrop-filter: invert(var(--invert));
-  backdrop-filter: invert(var(--invert));
-}
-
-.GlassMaterial:before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 11;
-  display: block;
-  border-radius: var(--corner-radius);
-  padding: 1px;
-  border: 0 solid transparent;
-  background: linear-gradient(
-    155deg,
-    hsla(0, 0%, 100%, 0.15) 0%,
-    hsla(0, 0%, 0%, 0.2) 50%,
-    hsla(0, 0%, 100%, 0.15) 100%
-  );
-  -webkit-backdrop-filter: invert(0.15) opacity(1);
-  backdrop-filter: invert(0.15) opacity(1);
-  -webkit-mask:
-    linear-gradient(white 0 0) padding-box,
-    linear-gradient(white 0 0) content-box;
-  mask:
-    linear-gradient(white 0 0) padding-box,
-    linear-gradient(white 0 0) content-box;
-  -webkit-mask-composite: xor;
-  mask-composite: exclude, exclude;
-}
-
-.GlassMaterial .Highlight {
-  z-index: 12;
-  display: block;
-  border-radius: var(--corner-radius);
-  padding: 1px;
-  border: 0 solid transparent;
-  -webkit-backdrop-filter: brightness(1.2) contrast(1.6) saturate(1.2) opacity(1);
-  backdrop-filter: brightness(1.2) contrast(1.6) saturate(1.2) opacity(1);
-  -webkit-mask:
-    linear-gradient(white 0 0) padding-box,
-    linear-gradient(white 0 0) content-box;
-  mask:
-    linear-gradient(white 0 0) padding-box,
-    linear-gradient(white 0 0) content-box;
-  -webkit-mask-composite: xor;
-  mask-composite: exclude, exclude;
-}
-
-/* Variante leve (RF9.5): uma camada só, para os botões repetidos das listas. */
-.GlassContainer--light .GlassContent {
-  -webkit-backdrop-filter: blur(12px) saturate(1.6);
-  backdrop-filter: blur(12px) saturate(1.6);
-  background-color: var(--glass-scrim);
-  box-shadow: inset 0 0 0 0.5px var(--separator-strong);
-}
-
-/* Tamanhos (Apêndice A) */
-.GlassContainer--sm {
-  --corner-radius: 16px;
-  --base-strength: 8px;
-  --softness: 8px;
-}
-
-.GlassContainer--pill {
-  --corner-radius: 999px;
-}
-
-/* Fallback sem backdrop-filter: superfície sólida translúcida (RF9.5). */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .GlassContent {
-    background-color: var(--glass-fallback);
-    box-shadow: inset 0 0 0 0.5px var(--separator-strong);
+  &:hover {
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
   }
 
-  .GlassMaterial {
+  &::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: transparent;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+  }
+
+  &:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.3);
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
     display: none;
   }
 }
 
-/* Acessibilidade: desliga vidro e animações quando o sistema pede (RF9.5). */
-@media (prefers-reduced-transparency: reduce) {
-  .GlassContent {
-    background-color: var(--glass-fallback) !important;
-    box-shadow: inset 0 0 0 0.5px var(--separator-strong);
+/* Linhas fora da viewport não entram no layout nem na pintura (RNF7). */
+@utility lazy-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}
+
+/* ============================================================================
+   Tooltip leve (data-tip) para os botões de ícone da barra superior e do player.
+   ========================================================================== */
+
+[data-tip] {
+  position: relative;
+}
+
+@media (hover: hover) {
+  [data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    transform: translateX(-50%);
+    z-index: 60;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: var(--color-sp-menu);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 16px 24px rgba(0, 0, 0, 0.3), 0 6px 8px rgba(0, 0, 0, 0.2);
+    animation: sp-fade 120ms ease-out 400ms both;
   }
 
-  .GlassMaterial,
-  .GlassContainer:before,
-  .progressive-blur {
-    display: none !important;
-  }
-
-  .CoverBackdrop {
-    display: none !important;
+  [data-tip-pos="bottom"]:hover::after {
+    bottom: auto;
+    top: calc(100% + 8px);
   }
 }
+
+/* ============================================================================
+   Equalizador animado da faixa que está tocando.
+   ========================================================================== */
+
+.sp-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+
+.sp-eq > span {
+  width: 3px;
+  height: 100%;
+  background: var(--color-sp-green);
+  border-radius: 1px;
+  transform-origin: bottom;
+  animation: sp-eq-bar 900ms ease-in-out infinite alternate;
+}
+
+.sp-eq > span:nth-child(2) {
+  animation-delay: -300ms;
+}
+
+.sp-eq > span:nth-child(3) {
+  animation-delay: -600ms;
+}
+
+.sp-eq > span:nth-child(4) {
+  animation-delay: -150ms;
+}
+
+@keyframes sp-eq-bar {
+  0% {
+    transform: scaleY(0.25);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+  100% {
+    transform: scaleY(0.45);
+  }
+}
+
+/* ============================================================================
+   Acessibilidade
+   ========================================================================== */
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -403,188 +251,46 @@
 }
 
 /* ============================================================================
-   Progressive Blur — Apêndice B do PRD v2
+   Tabela de faixas: as colunas aparecem conforme a largura do container,
+   como a lista das playlists do Spotify.
    ========================================================================== */
 
-.progressive-blur {
-  --blur-strength: 16px;
-  height: 80px;
-  z-index: 0;
-  position: absolute;
-  pointer-events: none;
-  top: 0;
-  bottom: auto;
-  left: 0;
-  right: 0;
-}
-
-.progressive-blur > div {
-  position: absolute;
-  inset: 0;
-}
-
-.progressive-blur > div:nth-child(1) {
-  z-index: 7;
-  -webkit-backdrop-filter: blur(calc(var(--blur-strength) / 64));
-  backdrop-filter: blur(calc(var(--blur-strength) / 64));
-  -webkit-mask: linear-gradient(to bottom, rgba(0, 0, 0, 1) 95%, rgba(0, 0, 0, 0) 100%);
-  mask: linear-gradient(to bottom, rgba(0, 0, 0, 1) 95%, rgba(0, 0, 0, 0) 100%);
-}
-.progressive-blur > div:nth-child(2) {
-  z-index: 6;
-  -webkit-backdrop-filter: blur(calc(var(--blur-strength) / 32));
-  backdrop-filter: blur(calc(var(--blur-strength) / 32));
-  -webkit-mask: linear-gradient(to bottom, rgba(0, 0, 0, 1) 90%, rgba(0, 0, 0, 0) 95%);
-  mask: linear-gradient(to bottom, rgba(0, 0, 0, 1) 90%, rgba(0, 0, 0, 0) 95%);
-}
-.progressive-blur > div:nth-child(3) {
-  z-index: 5;
-  -webkit-backdrop-filter: blur(calc(var(--blur-strength) / 16));
-  backdrop-filter: blur(calc(var(--blur-strength) / 16));
-  -webkit-mask: linear-gradient(to bottom, rgba(0, 0, 0, 1) 80%, rgba(0, 0, 0, 0) 100%);
-  mask: linear-gradient(to bottom, rgba(0, 0, 0, 1) 80%, rgba(0, 0, 0, 0) 100%);
-}
-.progressive-blur > div:nth-child(4) {
-  z-index: 4;
-  -webkit-backdrop-filter: blur(calc(var(--blur-strength) / 8));
-  backdrop-filter: blur(calc(var(--blur-strength) / 8));
-  -webkit-mask: linear-gradient(to bottom, rgba(0, 0, 0, 1) 60%, rgba(0, 0, 0, 0) 80%);
-  mask: linear-gradient(to bottom, rgba(0, 0, 0, 1) 60%, rgba(0, 0, 0, 0) 80%);
-}
-.progressive-blur > div:nth-child(5) {
-  z-index: 3;
-  -webkit-backdrop-filter: blur(calc(var(--blur-strength) / 4));
-  backdrop-filter: blur(calc(var(--blur-strength) / 4));
-  -webkit-mask: linear-gradient(to bottom, rgba(0, 0, 0, 1) 40%, rgba(0, 0, 0, 0) 60%);
-  mask: linear-gradient(to bottom, rgba(0, 0, 0, 1) 40%, rgba(0, 0, 0, 0) 60%);
-}
-.progressive-blur > div:nth-child(6) {
-  z-index: 2;
-  -webkit-backdrop-filter: blur(calc(var(--blur-strength) / 2));
-  backdrop-filter: blur(calc(var(--blur-strength) / 2));
-  -webkit-mask: linear-gradient(to bottom, rgba(0, 0, 0, 1) 20%, rgba(0, 0, 0, 0) 40%);
-  mask: linear-gradient(to bottom, rgba(0, 0, 0, 1) 20%, rgba(0, 0, 0, 0) 40%);
-}
-.progressive-blur > div:nth-child(7) {
-  z-index: 1;
-  -webkit-backdrop-filter: blur(var(--blur-strength));
-  backdrop-filter: blur(var(--blur-strength));
-  -webkit-mask: linear-gradient(to bottom, rgba(0, 0, 0, 1) 10%, rgba(0, 0, 0, 0) 20%);
-  mask: linear-gradient(to bottom, rgba(0, 0, 0, 1) 10%, rgba(0, 0, 0, 0) 20%);
-}
-
-/* Variante da base: mesmos degradês invertidos (to top). */
-.progressive-blur--bottom {
-  top: auto;
-  bottom: 0;
-}
-.progressive-blur--bottom > div:nth-child(1) {
-  -webkit-mask: linear-gradient(to top, rgba(0, 0, 0, 1) 95%, rgba(0, 0, 0, 0) 100%);
-  mask: linear-gradient(to top, rgba(0, 0, 0, 1) 95%, rgba(0, 0, 0, 0) 100%);
-}
-.progressive-blur--bottom > div:nth-child(2) {
-  -webkit-mask: linear-gradient(to top, rgba(0, 0, 0, 1) 90%, rgba(0, 0, 0, 0) 95%);
-  mask: linear-gradient(to top, rgba(0, 0, 0, 1) 90%, rgba(0, 0, 0, 0) 95%);
-}
-.progressive-blur--bottom > div:nth-child(3) {
-  -webkit-mask: linear-gradient(to top, rgba(0, 0, 0, 1) 80%, rgba(0, 0, 0, 0) 100%);
-  mask: linear-gradient(to top, rgba(0, 0, 0, 1) 80%, rgba(0, 0, 0, 0) 100%);
-}
-.progressive-blur--bottom > div:nth-child(4) {
-  -webkit-mask: linear-gradient(to top, rgba(0, 0, 0, 1) 60%, rgba(0, 0, 0, 0) 80%);
-  mask: linear-gradient(to top, rgba(0, 0, 0, 1) 60%, rgba(0, 0, 0, 0) 80%);
-}
-.progressive-blur--bottom > div:nth-child(5) {
-  -webkit-mask: linear-gradient(to top, rgba(0, 0, 0, 1) 40%, rgba(0, 0, 0, 0) 60%);
-  mask: linear-gradient(to top, rgba(0, 0, 0, 1) 40%, rgba(0, 0, 0, 0) 60%);
-}
-.progressive-blur--bottom > div:nth-child(6) {
-  -webkit-mask: linear-gradient(to top, rgba(0, 0, 0, 1) 20%, rgba(0, 0, 0, 0) 40%);
-  mask: linear-gradient(to top, rgba(0, 0, 0, 1) 20%, rgba(0, 0, 0, 0) 40%);
-}
-.progressive-blur--bottom > div:nth-child(7) {
-  -webkit-mask: linear-gradient(to top, rgba(0, 0, 0, 1) 10%, rgba(0, 0, 0, 0) 20%);
-  mask: linear-gradient(to top, rgba(0, 0, 0, 1) 10%, rgba(0, 0, 0, 0) 20%);
-}
-
-/* ============================================================================
-   Fundo com a arte da capa (RF9.4)
-   ========================================================================== */
-
-.CoverBackdrop {
-  position: fixed;
-  inset: -10%;
-  z-index: -1;
-  background-size: cover;
-  background-position: center;
-  filter: blur(60px) saturate(1.6);
-  opacity: 0;
-  transition: opacity 600ms ease;
-  pointer-events: none;
-  will-change: opacity;
-}
-
-.CoverBackdrop--visible {
-  opacity: 0.35;
-}
-
-/* ============================================================================
-   Rolagem e listas
-   ========================================================================== */
-
-.app-scroll {
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-}
-
-/* RNF7: linhas fora da viewport não entram no layout nem na pintura. */
-.list-row {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 56px;
-}
-
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--separator-strong);
-  border-radius: 9999px;
-}
-
-/* ============================================================================
-   Sheets
-   ========================================================================== */
-
-@keyframes sheet-up {
-  from {
-    transform: translateY(100%);
+/* Em @layer components para que utilitários (max-md:hidden, px-*) possam sobrescrever. */
+@layer components {
+  .sp-tracks {
+    container-type: inline-size;
   }
-  to {
-    transform: translateY(0);
-  }
-}
 
-@keyframes fade-in {
-  from {
-    opacity: 0;
+  .sp-track-grid {
+    display: grid;
+    align-items: center;
+    column-gap: 16px;
+    padding: 0 16px;
+    grid-template-columns: [first] minmax(0, 1fr) [last] auto;
   }
-  to {
-    opacity: 1;
+
+  .sp-track-grid > .sp-col-index,
+  .sp-track-grid > .sp-col-album {
+    display: none;
   }
-}
 
-.animate-sheet-up {
-  animation: sheet-up 380ms var(--ease-ios);
-}
+  @container (min-width: 480px) {
+    .sp-track-grid {
+      grid-template-columns: [index] 16px [first] minmax(0, 1fr) [last] minmax(120px, auto);
+    }
 
-.animate-fade-in {
-  animation: fade-in 220ms ease;
+    .sp-track-grid > .sp-col-index {
+      display: flex;
+    }
+  }
+
+  @container (min-width: 720px) {
+    .sp-track-grid[data-variant="playlist"] {
+      grid-template-columns: [index] 16px [first] minmax(0, 6fr) [album] minmax(0, 4fr) [last] minmax(120px, 1fr);
+    }
+
+    .sp-track-grid[data-variant="playlist"] > .sp-col-album {
+      display: flex;
+    }
+  }
 }

@@ -32,8 +32,11 @@
    - **Fila estrita com worker único (concorrência = 1)** executando sob prioridade reduzida no sistema operacional (`nice -n 19`), garantindo que o streaming simultâneo nunca sofra engasgos.
    - Higienização automática de metadados, download de arte de capa e indexação imediata na biblioteca.
 
-5. **Frontend PWA Offline-First:**
+5. **Frontend PWA Offline-First, no estilo Spotify:**
    - SPA moderna construída com React 19, TypeScript, Vite e Tailwind CSS.
+   - Interface escura inspirada no Spotify: barra superior com Início, busca e notificações de download; sidebar **Sua Biblioteca** com botão **Criar** (playlist ou pasta) e filtros Playlists / Artistas / Álbuns; Início com atalhos, **Mix Diário**, estações de rádio por artista e estantes da biblioteca; páginas de rádio, playlist, álbum e artista com cabeçalho na cor da capa; player fixo na base (aleatório, anterior/próxima, progresso, volume) e fila lateral.
+   - No celular: mini player flutuante colorido pela capa, player em tela cheia e navegação inferior.
+   - Os componentes Liquid Glass anteriores continuam em `web/src/shared/ui` e `web/src/app/shell`, preservados sem uso.
    - **Zero Node.js em produção:** o build do frontend é 100% embutido no executável estático do Go via `go:embed`.
    - Armazenamento offline real via **IndexedDB** (`offline_tracks`): o áudio é baixado como `Blob` e reproduzido localmente via `URL.createObjectURL` em modo avião ou sem rede.
    - Suporte nativo à **Media Session API** (controles de hardware, fones Bluetooth, tela de bloqueio e relógios inteligentes).

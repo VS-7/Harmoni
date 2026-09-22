@@ -10,11 +10,12 @@ import type {
 } from '../../domain/download.ts';
 import type { RemoteArtist, RemoteItem, RemotePlaylist, SearchType } from '../../domain/discovery.ts';
 import type { Playlist } from '../../domain/playlist.ts';
+import type { PlaylistFolder } from '../../domain/folder.ts';
 
-/** postJson centralizes the error shape the API returns ({"error": "..."}). */
-async function postJson<T>(url: string, body: unknown, fallbackMessage: string): Promise<T> {
+/** sendJson centralizes the error shape the API returns ({"error": "..."}). */
+async function sendJson<T>(method: string, url: string, body: unknown, fallbackMessage: string): Promise<T> {
   const res = await fetch(url, {
-    method: 'POST',
+    method,
     headers: { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -23,7 +24,13 @@ async function postJson<T>(url: string, body: unknown, fallbackMessage: string):
     throw new Error(errJson.error || fallbackMessage);
   }
   if (res.status === 204) return undefined as T;
-  return res.json();
+  // Some routes answer 201 with an empty body (e.g. adding a track to a playlist).
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+function postJson<T>(url: string, body: unknown, fallbackMessage: string): Promise<T> {
+  return sendJson<T>('POST', url, body, fallbackMessage);
 }
 
 export const apiClient = {
@@ -63,6 +70,13 @@ export const apiClient = {
     if (!res.ok) throw new Error('Falha ao buscar artistas');
     const json = await res.json();
     return { data: json.data || [], total: json.total || 0 };
+  },
+
+  async getArtist(id: string): Promise<{ artist: Artist; albums: Album[]; tracks: Track[] }> {
+    const res = await fetch(endpoints.artist(id));
+    if (!res.ok) throw new Error('Artista não encontrado');
+    const json = await res.json();
+    return { artist: json.artist, albums: json.albums || [], tracks: json.tracks || [] };
   },
 
   async getRadio(seedId: string, limit = 20, recentArtists: string[] = [], recentTracks: string[] = []): Promise<Track[]> {
@@ -116,6 +130,35 @@ export const apiClient = {
       throw new Error(err.error || 'Falha ao gerar playlist inteligente');
     }
     return res.json();
+  },
+
+  /** "Editar detalhes": o servidor sempre recebe nome e descrição juntos. */
+  async updatePlaylist(id: string, name: string, description: string): Promise<Playlist> {
+    return sendJson<Playlist>('PATCH', endpoints.playlist(id), { name, description }, 'Falha ao editar playlist');
+  },
+
+  /** Move a playlist para uma pasta, ou de volta à raiz com null. */
+  async movePlaylist(id: string, folderId: string | null): Promise<void> {
+    await sendJson<void>('PUT', endpoints.playlistFolder(id), { folderId }, 'Falha ao mover playlist');
+  },
+
+  async listFolders(): Promise<PlaylistFolder[]> {
+    const res = await fetch(endpoints.folders);
+    if (!res.ok) throw new Error('Falha ao buscar pastas');
+    const json = await res.json();
+    return json.data || [];
+  },
+
+  async createFolder(name: string): Promise<PlaylistFolder> {
+    return postJson<PlaylistFolder>(endpoints.folders, { name }, 'Falha ao criar pasta');
+  },
+
+  async renameFolder(id: string, name: string): Promise<PlaylistFolder> {
+    return sendJson<PlaylistFolder>('PATCH', endpoints.folder(id), { name }, 'Falha ao renomear pasta');
+  },
+
+  async deleteFolder(id: string): Promise<void> {
+    await sendJson<void>('DELETE', endpoints.folder(id), undefined, 'Falha ao excluir pasta');
   },
 
   async deletePlaylist(id: string): Promise<void> {
@@ -227,6 +270,10 @@ export const apiClient = {
 
   getAlbumCoverUrl(albumId: string): string {
     return endpoints.albumCover(albumId);
+  },
+
+  getArtistCoverUrl(artistId: string): string {
+    return endpoints.artistCover(artistId);
   },
 };
 

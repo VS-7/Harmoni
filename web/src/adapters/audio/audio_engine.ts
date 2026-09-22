@@ -41,6 +41,12 @@ export class AudioEngine {
       if (this.callbacks) this.callbacks.onPlay();
     });
 
+    // Depois de um 'waiting' (buffering) só vem 'playing', não 'play': sem isto o player
+    // ficaria preso em "carregando" enquanto o áudio já toca.
+    this.audio.addEventListener('playing', () => {
+      if (this.callbacks) this.callbacks.onPlay();
+    });
+
     this.audio.addEventListener('pause', () => {
       if (this.callbacks) this.callbacks.onPause();
     });

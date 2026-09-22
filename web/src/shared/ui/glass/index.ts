@@ -1,3 +1,6 @@
+// Os estilos do Liquid Glass viajam com os componentes que os usam.
+import './liquid-glass.css';
+
 export { LiquidGlass } from './LiquidGlass.tsx';
 export type { GlassRadius, GlassVariant, LiquidGlassProps } from './LiquidGlass.tsx';
 export { GlassButton } from './GlassButton.tsx';

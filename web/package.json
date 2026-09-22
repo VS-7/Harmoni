@@ -10,6 +10,7 @@
     "build:sw": "esbuild src/sw/service-worker.ts --bundle --format=iife --target=es2020 --minify --outfile=dist/service-worker.js"
   },
   "dependencies": {
+    "@fontsource-variable/figtree": "^5.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "lucide-react": "^1.16.0",
     "react": "^19.0.0",
