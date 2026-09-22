@@ -48,19 +48,25 @@ func (r *PlaylistRepository) Save(ctx context.Context, pl *playlist.Playlist) er
 }
 
 func (r *PlaylistRepository) FindByID(ctx context.Context, id playlist.PlaylistID) (*playlist.Playlist, error) {
+	if !isUUID(string(id)) {
+		return nil, playlist.ErrPlaylistNotFound
+	}
+
 	query := `
-		SELECT id, name, COALESCE(description, ''), COALESCE(cover_path, ''), is_smart, created_at, updated_at
+		SELECT id, name, COALESCE(description, ''), COALESCE(cover_path, ''), is_smart, folder_id, created_at, updated_at
 		FROM playlists
 		WHERE id = $1
 	`
 	var pl playlist.Playlist
 	var idStr string
+	var folderID *string
 	err := r.pool.QueryRow(ctx, query, string(id)).Scan(
 		&idStr,
 		&pl.Name,
 		&pl.Description,
 		&pl.CoverPath,
 		&pl.IsSmart,
+		&folderID,
 		&pl.CreatedAt,
 		&pl.UpdatedAt,
 	)
@@ -71,6 +77,7 @@ func (r *PlaylistRepository) FindByID(ctx context.Context, id playlist.PlaylistI
 		return nil, fmt.Errorf("falha ao buscar playlist por id: %w", err)
 	}
 	pl.ID = playlist.PlaylistID(idStr)
+	pl.FolderID = toFolderID(folderID)
 
 	// Fetch tracks ordered by position
 	tracks, err := r.GetTracks(ctx, pl.ID)
@@ -79,6 +86,7 @@ func (r *PlaylistRepository) FindByID(ctx context.Context, id playlist.PlaylistI
 	}
 	pl.Tracks = tracks
 	pl.TrackCount = len(tracks)
+	pl.CoverTrackIDs = playlist.PickCoverTracks(tracks)
 
 	totalSec := 0
 	for _, t := range tracks {
@@ -91,19 +99,21 @@ func (r *PlaylistRepository) FindByID(ctx context.Context, id playlist.PlaylistI
 
 func (r *PlaylistRepository) FindByName(ctx context.Context, name string) (*playlist.Playlist, error) {
 	query := `
-		SELECT id, name, COALESCE(description, ''), COALESCE(cover_path, ''), is_smart, created_at, updated_at
+		SELECT id, name, COALESCE(description, ''), COALESCE(cover_path, ''), is_smart, folder_id, created_at, updated_at
 		FROM playlists
 		WHERE LOWER(name) = LOWER($1)
 		LIMIT 1
 	`
 	var pl playlist.Playlist
 	var idStr string
+	var folderID *string
 	err := r.pool.QueryRow(ctx, query, name).Scan(
 		&idStr,
 		&pl.Name,
 		&pl.Description,
 		&pl.CoverPath,
 		&pl.IsSmart,
+		&folderID,
 		&pl.CreatedAt,
 		&pl.UpdatedAt,
 	)
@@ -114,11 +124,13 @@ func (r *PlaylistRepository) FindByName(ctx context.Context, name string) (*play
 		return nil, fmt.Errorf("falha ao buscar playlist por nome: %w", err)
 	}
 	pl.ID = playlist.PlaylistID(idStr)
+	pl.FolderID = toFolderID(folderID)
 
 	tracks, err := r.GetTracks(ctx, pl.ID)
 	if err == nil {
 		pl.Tracks = tracks
 		pl.TrackCount = len(tracks)
+		pl.CoverTrackIDs = playlist.PickCoverTracks(tracks)
 		totalSec := 0
 		for _, t := range tracks {
 			totalSec += int(t.Duration.Seconds())
@@ -137,10 +149,23 @@ func (r *PlaylistRepository) ListAll(ctx context.Context) ([]*playlist.Playlist,
 			COALESCE(p.description, ''), 
 			COALESCE(p.cover_path, ''), 
 			p.is_smart, 
+			p.folder_id,
 			p.created_at, 
 			p.updated_at,
 			COUNT(pt.track_id) as track_count,
-			COALESCE(SUM(t.duration), 0) as total_duration
+			COALESCE(SUM(t.duration), 0) as total_duration,
+			-- Same rule as playlist.PickCoverTracks: first track of each of the first 4 albums.
+			ARRAY(
+				SELECT c.track_id::text FROM (
+					SELECT DISTINCT ON (COALESCE(ct.album_id::text, ct.id::text)) cpt.track_id, cpt.position
+					FROM playlist_tracks cpt
+					JOIN tracks ct ON ct.id = cpt.track_id
+					WHERE cpt.playlist_id = p.id
+					ORDER BY COALESCE(ct.album_id::text, ct.id::text), cpt.position
+				) c
+				ORDER BY c.position
+				LIMIT 4
+			) as cover_track_ids
 		FROM playlists p
 		LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
 		LEFT JOIN tracks t ON pt.track_id = t.id
@@ -157,25 +182,34 @@ func (r *PlaylistRepository) ListAll(ctx context.Context) ([]*playlist.Playlist,
 	for rows.Next() {
 		var pl playlist.Playlist
 		var idStr string
+		var folderID *string
 		var count int
 		var dur int
+		var coverIDs []string
 		if err := rows.Scan(
 			&idStr,
 			&pl.Name,
 			&pl.Description,
 			&pl.CoverPath,
 			&pl.IsSmart,
+			&folderID,
 			&pl.CreatedAt,
 			&pl.UpdatedAt,
 			&count,
 			&dur,
+			&coverIDs,
 		); err != nil {
 			return nil, fmt.Errorf("falha ao escanear playlist: %w", err)
 		}
 		pl.ID = playlist.PlaylistID(idStr)
+		pl.FolderID = toFolderID(folderID)
 		pl.TrackCount = count
 		pl.Duration = dur
 		pl.Tracks = make([]library.Track, 0)
+		pl.CoverTrackIDs = make([]library.TrackID, len(coverIDs))
+		for i, id := range coverIDs {
+			pl.CoverTrackIDs[i] = library.TrackID(id)
+		}
 		playlists = append(playlists, &pl)
 	}
 
@@ -332,4 +366,12 @@ func (r *PlaylistRepository) GetTracks(ctx context.Context, playlistID playlist.
 	}
 
 	return tracks, nil
+}
+
+func toFolderID(raw *string) *playlist.FolderID {
+	if raw == nil {
+		return nil
+	}
+	id := playlist.FolderID(*raw)
+	return &id
 }

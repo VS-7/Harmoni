@@ -26,6 +26,8 @@ type HandlersConfig struct {
 	ScanUC     ports.LibraryScanUseCase
 	RadioUC    ports.RadioUseCase
 	PlaylistUC ports.PlaylistUseCase
+	// FolderUC groups playlists into folders in the library sidebar.
+	FolderUC   ports.PlaylistFolderUseCase
 	IngestUC   ports.IngestUseCase
 	SubsonicUC ports.SubsonicUseCase
 	// DiscoveryUC and JobEvents power the search tab and the live download queue (v2).
@@ -44,6 +46,7 @@ func NewServer(port string, cfg HandlersConfig) *Server {
 	artistH := rest.NewArtistHandler(cfg.ArtistUC)
 	radioH := rest.NewRadioHandler(cfg.RadioUC)
 	playlistH := rest.NewPlaylistHandler(cfg.PlaylistUC)
+	folderH := rest.NewPlaylistFolderHandler(cfg.FolderUC)
 	downloadH := rest.NewDownloadHandler(cfg.IngestUC, cfg.JobEvents)
 	discoverH := rest.NewDiscoverHandler(cfg.DiscoveryUC)
 	scanH := rest.NewScanHandler(cfg.ScanUC)
@@ -57,6 +60,7 @@ func NewServer(port string, cfg HandlersConfig) *Server {
 	mux.HandleFunc("GET /api/v1/library/albums/{id}/cover", albumH.GetCover)
 	mux.HandleFunc("GET /api/v1/library/artists", artistH.ListArtists)
 	mux.HandleFunc("GET /api/v1/library/artists/{id}", artistH.GetArtist)
+	mux.HandleFunc("GET /api/v1/library/artists/{id}/cover", artistH.GetCover)
 	mux.HandleFunc("GET /api/v1/stream/{id}", streamH.ServeHTTP)
 	mux.HandleFunc("GET /api/v1/covers/{id}", coverH.ServeHTTP)
 	mux.HandleFunc("GET /api/v1/radio", radioH.ServeHTTP)
@@ -64,9 +68,18 @@ func NewServer(port string, cfg HandlersConfig) *Server {
 	mux.HandleFunc("POST /api/v1/playlists", playlistH.CreatePlaylist)
 	mux.HandleFunc("POST /api/v1/playlists/smart", playlistH.CreateSmartPlaylist)
 	mux.HandleFunc("GET /api/v1/playlists/{id}", playlistH.GetPlaylist)
+	mux.HandleFunc("PATCH /api/v1/playlists/{id}", playlistH.UpdatePlaylist)
 	mux.HandleFunc("DELETE /api/v1/playlists/{id}", playlistH.DeletePlaylist)
+	mux.HandleFunc("PUT /api/v1/playlists/{id}/folder", folderH.MovePlaylist)
 	mux.HandleFunc("POST /api/v1/playlists/{id}/tracks", playlistH.AddTrack)
 	mux.HandleFunc("DELETE /api/v1/playlists/{id}/tracks/{trackId}", playlistH.RemoveTrack)
+
+	// Playlist folders of the library sidebar ("Criar" > "Pasta")
+	mux.HandleFunc("GET /api/v1/playlist-folders", folderH.ListFolders)
+	mux.HandleFunc("POST /api/v1/playlist-folders", folderH.CreateFolder)
+	mux.HandleFunc("PATCH /api/v1/playlist-folders/{id}", folderH.RenameFolder)
+	mux.HandleFunc("DELETE /api/v1/playlist-folders/{id}", folderH.DeleteFolder)
+
 	mux.HandleFunc("POST /api/v1/downloads", downloadH.SubmitDownload)
 	mux.HandleFunc("POST /api/v1/downloads/batch", downloadH.SubmitBatch)
 	mux.HandleFunc("POST /api/v1/downloads/inspect", downloadH.Inspect)

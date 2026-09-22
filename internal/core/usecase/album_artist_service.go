@@ -83,15 +83,82 @@ func (s *AlbumService) GetAlbumCover(ctx context.Context, id library.AlbumID) (*
 	return nil, fmt.Errorf("nenhuma capa encontrada para o álbum %s", id)
 }
 
+// maxArtistCoverTracks bounds how many audio files an artist cover lookup may open
+// when none of the artist's albums has a cover file.
+const maxArtistCoverTracks = 5
+
 type ArtistService struct {
-	artistRepo ports.ArtistRepository
-	albumRepo  ports.AlbumRepository
+	artistRepo  ports.ArtistRepository
+	albumRepo   ports.AlbumRepository
+	trackReader ports.TrackReader
+	storage     ports.AudioFileStorage
 }
 
-func NewArtistService(artistRepo ports.ArtistRepository, albumRepo ports.AlbumRepository) *ArtistService {
+func NewArtistService(
+	artistRepo ports.ArtistRepository,
+	albumRepo ports.AlbumRepository,
+	trackReader ports.TrackReader,
+	storage ports.AudioFileStorage,
+) *ArtistService {
 	return &ArtistService{
-		artistRepo: artistRepo,
-		albumRepo:  albumRepo,
+		artistRepo:  artistRepo,
+		albumRepo:   albumRepo,
+		trackReader: trackReader,
+		storage:     storage,
+	}
+}
+
+func (s *ArtistService) ListArtistTracks(ctx context.Context, id library.ArtistID) ([]library.Track, error) {
+	tracks, err := s.trackReader.ListByArtistID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("falha ao listar faixas do artista %s: %w", id, err)
+	}
+	return tracks, nil
+}
+
+func (s *ArtistService) GetArtistCover(ctx context.Context, id library.ArtistID) (*ports.CoverResult, error) {
+	albums, err := s.albumRepo.ListByArtistID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("falha ao listar álbuns do artista %s: %w", id, err)
+	}
+	for _, album := range albums {
+		if album.CoverPath == "" {
+			continue
+		}
+		if cover := s.openCover(album.CoverPath, id); cover != nil {
+			return cover, nil
+		}
+	}
+
+	// No album art on disk: fall back to the picture embedded in the artist's tracks.
+	tracks, err := s.trackReader.ListByArtistID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("falha ao listar faixas do artista %s: %w", id, err)
+	}
+	for i, track := range tracks {
+		if i >= maxArtistCoverTracks {
+			break
+		}
+		if cover := s.openCover(track.FilePath, id); cover != nil {
+			return cover, nil
+		}
+	}
+
+	return nil, fmt.Errorf("nenhuma capa encontrada para o artista %s", id)
+}
+
+// openCover returns nil when the file has no usable picture, so the caller can try the next one.
+func (s *ArtistService) openCover(path string, id library.ArtistID) *ports.CoverResult {
+	reader, mimeType, err := s.storage.ExtractCover(path)
+	if err != nil {
+		return nil
+	}
+	_, modTime, _ := s.storage.Stat(path)
+	return &ports.CoverResult{
+		Content:      reader,
+		MIMEType:     mimeType,
+		ETag:         fmt.Sprintf(`"artist-cover-%s-%d"`, id, modTime.Unix()),
+		LastModified: modTime,
 	}
 }
 

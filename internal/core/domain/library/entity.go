@@ -24,12 +24,14 @@ func NewArtist(id ArtistID, name string) (*Artist, error) {
 }
 
 type Album struct {
-	ID        AlbumID
-	ArtistID  ArtistID
-	Title     string
-	Year      int
-	CoverPath string
-	CreatedAt time.Time
+	ID       AlbumID
+	ArtistID ArtistID
+	// ArtistName is filled by read queries only; it is never persisted on the album.
+	ArtistName string
+	Title      string
+	Year       int
+	CoverPath  string
+	CreatedAt  time.Time
 }
 
 func NewAlbum(id AlbumID, artistID ArtistID, title string, year int, coverPath string) (*Album, error) {

@@ -42,6 +42,11 @@ func (h *EmbedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(path, ".webmanifest") {
 			w.Header().Set("Content-Type", "application/manifest+json")
 		}
+		// A fonte da UI vem empacotada no build; a tabela MIME embutida do Go não
+		// conhece .woff2 e a imagem Alpine não tem /etc/mime.types.
+		if strings.HasSuffix(path, ".woff2") {
+			w.Header().Set("Content-Type", "font/woff2")
+		}
 		h.fileServer.ServeHTTP(w, r)
 		return
 	}

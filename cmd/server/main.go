@@ -79,6 +79,7 @@ func main() {
 		trackRepo       *postgres.TrackRepository
 		radioRepo       *postgres.RadioRepository
 		playlistRepo    *postgres.PlaylistRepository
+		folderRepo      *postgres.PlaylistFolderRepository
 		downloadJobRepo *postgres.DownloadJobRepository
 		jobItemRepo     *postgres.DownloadJobItemRepository
 	)
@@ -89,6 +90,7 @@ func main() {
 		trackRepo = postgres.NewTrackRepository(pool)
 		radioRepo = postgres.NewRadioRepository(pool)
 		playlistRepo = postgres.NewPlaylistRepository(pool)
+		folderRepo = postgres.NewPlaylistFolderRepository(pool)
 		downloadJobRepo = postgres.NewDownloadJobRepository(pool)
 		jobItemRepo = postgres.NewDownloadJobItemRepository(pool)
 	}
@@ -105,6 +107,7 @@ func main() {
 		scanUC      *usecase.LibraryScanService
 		radioUC     *usecase.RadioService
 		playlistUC  *usecase.PlaylistService
+		folderUC    *usecase.PlaylistFolderService
 		ingestUC    *usecase.IngestService
 		subsonicUC  *usecase.SubsonicService
 		discoveryUC *usecase.DiscoveryService
@@ -113,10 +116,11 @@ func main() {
 	if pool != nil {
 		trackUC = usecase.NewTrackService(trackRepo, audioStorage)
 		albumUC = usecase.NewAlbumService(albumRepo, trackRepo, audioStorage)
-		artistUC = usecase.NewArtistService(artistRepo, albumRepo)
+		artistUC = usecase.NewArtistService(artistRepo, albumRepo, trackRepo, audioStorage)
 		scanUC = usecase.NewLibraryScanService(cfg.MusicDir, trackRepo, albumRepo, artistRepo, tagExtractor, audioStorage, embedder)
 		radioUC = usecase.NewRadioService(trackRepo, radioRepo, embedder)
 		playlistUC = usecase.NewPlaylistService(playlistRepo, trackRepo, radioUC)
+		folderUC = usecase.NewPlaylistFolderService(folderRepo)
 		discoveryUC = usecase.NewDiscoveryService(remoteCatalog, remoteCatalog, remoteCatalog, remoteCatalog, trackRepo)
 		ingestUC = usecase.NewIngestService(downloadJobRepo, jobItemRepo, discoveryUC, jobEvents, jobQueue)
 		subsonicUC = usecase.NewSubsonicService("admin", "admin", artistRepo, albumRepo, trackRepo, radioUC)
@@ -147,6 +151,7 @@ func main() {
 		ScanUC:     scanUC,
 		RadioUC:    radioUC,
 		PlaylistUC: playlistUC,
+		FolderUC:   folderUC,
 		IngestUC:   ingestUC,
 		SubsonicUC: subsonicUC,
 

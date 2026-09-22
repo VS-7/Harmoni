@@ -188,3 +188,13 @@ type PlaylistRepository interface {
 	RemoveTrack(ctx context.Context, playlistID playlist.PlaylistID, trackID library.TrackID) error
 	GetTracks(ctx context.Context, playlistID playlist.PlaylistID) ([]library.Track, error)
 }
+
+// PlaylistFolderRepository persists folders and which folder each playlist lives in.
+// PlaylistRepository.Save never touches the folder, so AssignPlaylist is its only writer.
+type PlaylistFolderRepository interface {
+	SaveFolder(ctx context.Context, folder *playlist.Folder) error
+	FindFolderByID(ctx context.Context, id playlist.FolderID) (*playlist.Folder, error)
+	ListFolders(ctx context.Context) ([]*playlist.Folder, error)
+	DeleteFolder(ctx context.Context, id playlist.FolderID) error
+	AssignPlaylist(ctx context.Context, playlistID playlist.PlaylistID, folderID *playlist.FolderID) error
+}

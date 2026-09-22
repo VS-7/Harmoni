@@ -2,6 +2,7 @@ package usecase_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -153,5 +154,34 @@ func TestPlaylistService_CreateAndManage(t *testing.T) {
 	fetchedAfterRemove, _ := svc.GetPlaylist(ctx, pl.ID)
 	if fetchedAfterRemove.TrackCount != 0 {
 		t.Fatalf("esperava 0 faixas após remoção, obteve %d", fetchedAfterRemove.TrackCount)
+	}
+}
+
+func TestPlaylistService_UpdatePlaylist(t *testing.T) {
+	repo := newMockPlaylistRepo()
+	svc := usecase.NewPlaylistService(repo, &mockTrackRepo{}, nil)
+	ctx := context.Background()
+
+	pl, err := svc.CreatePlaylist(ctx, "Minha playlist nº 1", "")
+	if err != nil {
+		t.Fatalf("falha ao criar playlist: %v", err)
+	}
+
+	updated, err := svc.UpdatePlaylist(ctx, pl.ID, "  Road trip ", "Para a estrada")
+	if err != nil {
+		t.Fatalf("falha ao editar playlist: %v", err)
+	}
+	if updated.Name != "Road trip" || updated.Description != "Para a estrada" {
+		t.Fatalf("edição não aplicada: %+v", updated)
+	}
+	if stored := repo.playlists[pl.ID]; stored.Name != "Road trip" {
+		t.Fatalf("edição não persistida: %q", stored.Name)
+	}
+
+	if _, err := svc.UpdatePlaylist(ctx, pl.ID, "  ", ""); !errors.Is(err, playlist.ErrInvalidPlaylistName) {
+		t.Fatalf("esperava ErrInvalidPlaylistName, obteve %v", err)
+	}
+	if _, err := svc.UpdatePlaylist(ctx, "nao-existe", "X", ""); !errors.Is(err, playlist.ErrPlaylistNotFound) {
+		t.Fatalf("esperava ErrPlaylistNotFound, obteve %v", err)
 	}
 }

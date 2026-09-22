@@ -53,6 +53,10 @@ func (h *PlaylistHandler) CreatePlaylist(w http.ResponseWriter, r *http.Request)
 			http.Error(w, `{"error": "o nome da playlist é obrigatório"}`, http.StatusBadRequest)
 			return
 		}
+		if errors.Is(err, playlist.ErrNameTooLong) {
+			http.Error(w, `{"error": "o nome deve ter no máximo 255 caracteres"}`, http.StatusBadRequest)
+			return
+		}
 		http.Error(w, `{"error": "falha ao criar playlist"}`, http.StatusInternalServerError)
 		return
 	}
@@ -113,19 +117,78 @@ func (h *PlaylistHandler) GetPlaylist(w http.ResponseWriter, r *http.Request) {
 		items[i] = toTrackResponse(tr)
 	}
 
+	body := playlistSummary(pl)
+	body["tracks"] = items
+
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"id":          pl.ID,
-		"name":        pl.Name,
-		"description": pl.Description,
-		"coverPath":   pl.CoverPath,
-		"isSmart":     pl.IsSmart,
-		"trackCount":  pl.TrackCount,
-		"duration":    pl.Duration,
-		"tracks":      items,
-		"createdAt":   pl.CreatedAt,
-		"updatedAt":   pl.UpdatedAt,
-	})
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+// playlistSummary is the playlist JSON without its tracks; callers add them when needed.
+func playlistSummary(pl *playlist.Playlist) map[string]any {
+	return map[string]any{
+		"id":            pl.ID,
+		"name":          pl.Name,
+		"description":   pl.Description,
+		"coverPath":     pl.CoverPath,
+		"isSmart":       pl.IsSmart,
+		"folderId":      pl.FolderID,
+		"coverTrackIds": coverIDs(pl),
+		"trackCount":    pl.TrackCount,
+		"duration":      pl.Duration,
+		"createdAt":     pl.CreatedAt,
+		"updatedAt":     pl.UpdatedAt,
+	}
+}
+
+func coverIDs(pl *playlist.Playlist) []library.TrackID {
+	if pl.CoverTrackIDs == nil {
+		return []library.TrackID{}
+	}
+	return pl.CoverTrackIDs
+}
+
+// updatePlaylistRequest carries both fields, as the "Editar detalhes" dialog always
+// sends them: a missing description clears it.
+type updatePlaylistRequest struct {
+	Name        *string `json:"name"`
+	Description string  `json:"description"`
+}
+
+func (h *PlaylistHandler) UpdatePlaylist(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, `{"error": "id é obrigatório"}`, http.StatusBadRequest)
+		return
+	}
+
+	var req updatePlaylistRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error": "corpo de requisição inválido"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Name == nil {
+		http.Error(w, `{"error": "o nome da playlist é obrigatório"}`, http.StatusBadRequest)
+		return
+	}
+
+	pl, err := h.playlistUC.UpdatePlaylist(r.Context(), playlist.PlaylistID(id), *req.Name, req.Description)
+	if err != nil {
+		switch {
+		case errors.Is(err, playlist.ErrPlaylistNotFound):
+			http.Error(w, `{"error": "playlist não encontrada"}`, http.StatusNotFound)
+		case errors.Is(err, playlist.ErrInvalidPlaylistName):
+			http.Error(w, `{"error": "o nome da playlist é obrigatório"}`, http.StatusBadRequest)
+		case errors.Is(err, playlist.ErrNameTooLong):
+			http.Error(w, `{"error": "o nome deve ter no máximo 255 caracteres"}`, http.StatusBadRequest)
+		default:
+			http.Error(w, `{"error": "falha ao editar playlist"}`, http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(playlistSummary(pl))
 }
 
 func (h *PlaylistHandler) DeletePlaylist(w http.ResponseWriter, r *http.Request) {

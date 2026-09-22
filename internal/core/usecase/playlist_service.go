@@ -58,6 +58,24 @@ func (s *PlaylistService) ListPlaylists(ctx context.Context) ([]*playlist.Playli
 	return playlists, nil
 }
 
+func (s *PlaylistService) UpdatePlaylist(ctx context.Context, id playlist.PlaylistID, name, description string) (*playlist.Playlist, error) {
+	pl, err := s.playlistRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("falha ao buscar playlist para edição: %w", err)
+	}
+
+	if err := pl.UpdateDetails(name, description); err != nil {
+		return nil, fmt.Errorf("dados inválidos para playlist: %w", err)
+	}
+
+	if err := s.playlistRepo.Save(ctx, pl); err != nil {
+		return nil, fmt.Errorf("falha ao salvar edição da playlist: %w", err)
+	}
+
+	slog.InfoContext(ctx, "playlist editada com sucesso", "id", pl.ID, "nome", pl.Name)
+	return pl, nil
+}
+
 func (s *PlaylistService) DeletePlaylist(ctx context.Context, id playlist.PlaylistID) error {
 	if err := s.playlistRepo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("falha ao deletar playlist: %w", err)

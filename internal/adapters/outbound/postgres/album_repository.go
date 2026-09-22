@@ -46,12 +46,18 @@ func (r *AlbumRepository) Update(ctx context.Context, album *library.Album) erro
 }
 
 func (r *AlbumRepository) FindByID(ctx context.Context, id library.AlbumID) (*library.Album, error) {
-	query := `SELECT id, artist_id, title, year, cover_path, created_at FROM albums WHERE id = $1`
+	query := `
+		SELECT al.id, al.artist_id, COALESCE(ar.name, ''), al.title, al.year, al.cover_path, al.created_at
+		FROM albums al
+		LEFT JOIN artists ar ON ar.id = al.artist_id
+		WHERE al.id = $1
+	`
 	var a library.Album
 	var idStr, artistIDStr string
 	err := r.pool.QueryRow(ctx, query, string(id)).Scan(
 		&idStr,
 		&artistIDStr,
+		&a.ArtistName,
 		&a.Title,
 		&a.Year,
 		&a.CoverPath,
@@ -102,7 +108,13 @@ func (r *AlbumRepository) List(ctx context.Context, offset, limit int) ([]librar
 		return nil, 0, fmt.Errorf("falha ao contar álbuns: %w", err)
 	}
 
-	query := `SELECT id, artist_id, title, year, cover_path, created_at FROM albums ORDER BY title ASC LIMIT $1 OFFSET $2`
+	query := `
+		SELECT al.id, al.artist_id, COALESCE(ar.name, ''), al.title, al.year, al.cover_path, al.created_at
+		FROM albums al
+		LEFT JOIN artists ar ON ar.id = al.artist_id
+		ORDER BY al.title ASC
+		LIMIT $1 OFFSET $2
+	`
 	rows, err := r.pool.Query(ctx, query, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("falha ao listar álbuns: %w", err)
@@ -113,7 +125,7 @@ func (r *AlbumRepository) List(ctx context.Context, offset, limit int) ([]librar
 	for rows.Next() {
 		var a library.Album
 		var idStr, artistIDStr string
-		if err := rows.Scan(&idStr, &artistIDStr, &a.Title, &a.Year, &a.CoverPath, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&idStr, &artistIDStr, &a.ArtistName, &a.Title, &a.Year, &a.CoverPath, &a.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		a.ID = library.AlbumID(idStr)
@@ -125,7 +137,13 @@ func (r *AlbumRepository) List(ctx context.Context, offset, limit int) ([]librar
 }
 
 func (r *AlbumRepository) ListByArtistID(ctx context.Context, artistID library.ArtistID) ([]library.Album, error) {
-	query := `SELECT id, artist_id, title, year, cover_path, created_at FROM albums WHERE artist_id = $1 ORDER BY year DESC, title ASC`
+	query := `
+		SELECT al.id, al.artist_id, COALESCE(ar.name, ''), al.title, al.year, al.cover_path, al.created_at
+		FROM albums al
+		LEFT JOIN artists ar ON ar.id = al.artist_id
+		WHERE al.artist_id = $1
+		ORDER BY al.year DESC, al.title ASC
+	`
 	rows, err := r.pool.Query(ctx, query, string(artistID))
 	if err != nil {
 		return nil, fmt.Errorf("falha ao listar álbuns do artista: %w", err)
@@ -136,7 +154,7 @@ func (r *AlbumRepository) ListByArtistID(ctx context.Context, artistID library.A
 	for rows.Next() {
 		var a library.Album
 		var idStr, artistIDStr string
-		if err := rows.Scan(&idStr, &artistIDStr, &a.Title, &a.Year, &a.CoverPath, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&idStr, &artistIDStr, &a.ArtistName, &a.Title, &a.Year, &a.CoverPath, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		a.ID = library.AlbumID(idStr)

@@ -43,6 +43,11 @@ type AlbumUseCase interface {
 type ArtistUseCase interface {
 	GetArtist(ctx context.Context, id library.ArtistID) (*library.Artist, []library.Album, error)
 	ListArtists(ctx context.Context, offset, limit int) ([]library.Artist, int, error)
+	// ListArtistTracks feeds the artist page ("Populares") and the artist radio seed.
+	ListArtistTracks(ctx context.Context, id library.ArtistID) ([]library.Track, error)
+	// GetArtistCover borrows the art of one of the artist's albums or tracks, since
+	// artists have no picture of their own.
+	GetArtistCover(ctx context.Context, id library.ArtistID) (*CoverResult, error)
 }
 
 type LibraryScanUseCase interface {
@@ -156,4 +161,16 @@ type PlaylistUseCase interface {
 	AddTrackToPlaylist(ctx context.Context, playlistID playlist.PlaylistID, trackID library.TrackID) error
 	RemoveTrackFromPlaylist(ctx context.Context, playlistID playlist.PlaylistID, trackID library.TrackID) error
 	CreateSmartPlaylist(ctx context.Context, seedTrackID library.TrackID, name string, limit int) (*playlist.Playlist, error)
+	UpdatePlaylist(ctx context.Context, id playlist.PlaylistID, name, description string) (*playlist.Playlist, error)
+}
+
+// PlaylistFolderUseCase organizes playlists into folders in the library sidebar.
+type PlaylistFolderUseCase interface {
+	CreateFolder(ctx context.Context, name string) (*playlist.Folder, error)
+	ListFolders(ctx context.Context) ([]*playlist.Folder, error)
+	RenameFolder(ctx context.Context, id playlist.FolderID, name string) (*playlist.Folder, error)
+	// DeleteFolder removes only the folder; its playlists go back to the library root.
+	DeleteFolder(ctx context.Context, id playlist.FolderID) error
+	// MovePlaylist puts a playlist inside a folder, or back at the root when folderID is nil.
+	MovePlaylist(ctx context.Context, playlistID playlist.PlaylistID, folderID *playlist.FolderID) error
 }
